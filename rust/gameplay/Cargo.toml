@@ -1,0 +1,12 @@
+[package]
+name = "gameplay"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thiserror = "2"
+tracing = "0.1"
+bevy = {version = "0.18.1", default-features = false, features = [
+    "2d"
+]}
+avian2d = "0.6.1"

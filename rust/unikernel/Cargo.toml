@@ -1,0 +1,12 @@
+[package]
+name = "unikernel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[target.'cfg(target_os = "hermit")'.dependencies]
+hermit = { git = "https://github.com/hermit-os/hermit-rs.git", tag = "hermit-0.13.2" }
+
+[features]
+default = ["hermit/acpi", "hermit/dhcpv4", "hermit/pci", "hermit/pci-ids", "hermit/tcp"]
