@@ -1,0 +1,98 @@
+[Server] tick=10625 round=4/10 elapsed=10,3s alive=179 toSpawn=150/351 players=1 disabled=0
+[Server] tick=10750 round=4/10 elapsed=12,3s alive=166 toSpawn=111/351 players=1 disabled=0
+[Server] tick=10875 round=4/10 elapsed=14,3s alive=156 toSpawn=72/351 players=1 disabled=0
+[Server] tick=11000 round=4/10 elapsed=16,3s alive=155 toSpawn=33/351 players=1 disabled=0
+[Server] tick=11125 round=4/10 elapsed=18,3s alive=160 toSpawn=0/351 players=1 disabled=0
+[Server] tick=11250 round=4/10 elapsed=20,3s alive=160 toSpawn=0/351 players=1 disabled=0
+[Server] tick=11375 round=4/10 elapsed=22,3s alive=160 toSpawn=0/351 players=1 disabled=0
+[Server] tick=11500 round=4/10 elapsed=24,3s alive=144 toSpawn=0/351 players=1 disabled=0
+[Server] tick=11625 round=4/10 elapsed=26,3s alive=68 toSpawn=0/351 players=1 disabled=0
+[Server] tick=11750 round=4/10 elapsed=28,3s alive=43 toSpawn=0/351 players=1 disabled=0
+[Server] tick=11875 round=4/10 elapsed=30,3s alive=4 toSpawn=0/351 players=1 disabled=0
+[Server] state: phase InRoundΓåÆInterRound round 4ΓåÆ4 tick=11943 enemies=0 players=1
+[Server] tick=12000 phase=InterRound nextRound=5/10 countdown=2,1s players=1
+[Server] tick=12125 phase=InterRound nextRound=5/10 countdown=0,1s players=1
+[Server] state: phase InterRoundΓåÆInRound round 4ΓåÆ5 tick=12131 enemies=0 players=1
+[Server] tick=12250 round=5/10 elapsed=1,9s alive=52 toSpawn=440/492 players=1 disabled=0
+[Server] tick=12375 round=5/10 elapsed=3,9s alive=106 toSpawn=386/492 players=1 disabled=0
+[Server] tick=12500 round=5/10 elapsed=5,9s alive=161 toSpawn=331/492 players=1 disabled=0
+[Server] tick=12625 round=5/10 elapsed=7,9s alive=216 toSpawn=276/492 players=1 disabled=0
+[Server] tick=12750 round=5/10 elapsed=9,9s alive=270 toSpawn=222/492 players=1 disabled=0
+[Server] tick=12875 round=5/10 elapsed=11,9s alive=325 toSpawn=167/492 players=1 disabled=0
+[Server] tick=13000 round=5/10 elapsed=13,9s alive=380 toSpawn=112/492 players=1 disabled=0
+[Server] tick=13125 round=5/10 elapsed=15,9s alive=434 toSpawn=58/492 players=1 disabled=0
+[Server] tick=13250 round=5/10 elapsed=17,9s alive=370 toSpawn=3/492 players=1 disabled=0
+Not enough space to write message, size=1284 space used=16 total size=1296
+Not enough space to write message, size=1282 space used=16 total size=1296
+Not enough space to write message, size=1283 space used=16 total size=1296
+Not enough space to write message, size=1281 space used=16 total size=1296
+Not enough space to write message, size=1283 space used=16 total size=1296
+Not enough space to write message, size=1283 space used=16 total size=1296
+Not enough space to write message, size=1285 space used=16 total size=1296
+Not enough space to write message, size=1285 space used=16 total size=1296
+[Server] Snapshot send failed (size=1311B, pid=0). Detail: Writing past the end of the buffer, size is 1311 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1308B, pid=0). Detail: Writing past the end of the buffer, size is 1308 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1306B, pid=0). Detail: Writing past the end of the buffer, size is 1306 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1308B, pid=0). Detail: Writing past the end of the buffer, size is 1308 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1306B, pid=0). Detail: Writing past the end of the buffer, size is 1306 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1310B, pid=0). Detail: Writing past the end of the buffer, size is 1310 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1310B, pid=0). Detail: Writing past the end of the buffer, size is 1310 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1310B, pid=0). Detail: Writing past the end of the buffer, size is 1310 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1314B, pid=0). Detail: Writing past the end of the buffer, size is 1314 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1316B, pid=0). Detail: Writing past the end of the buffer, size is 1316 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1314B, pid=0). Detail: Writing past the end of the buffer, size is 1314 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1314B, pid=0). Detail: Writing past the end of the buffer, size is 1314 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1334B, pid=0). Detail: Writing past the end of the buffer, size is 1334 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1336B, pid=0). Detail: Writing past the end of the buffer, size is 1336 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1338B, pid=0). Detail: Writing past the end of the buffer, size is 1338 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1338B, pid=0). Detail: Writing past the end of the buffer, size is 1338 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1336B, pid=0). Detail: Writing past the end of the buffer, size is 1336 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1338B, pid=0). Detail: Writing past the end of the buffer, size is 1338 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1336B, pid=0). Detail: Writing past the end of the buffer, size is 1336 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1338B, pid=0). Detail: Writing past the end of the buffer, size is 1338 bytes but remaining capacity is 1280 bytes
+Not enough space to write message, size=1289 space used=16 total size=1296
+Not enough space to write message, size=1286 space used=16 total size=1296
+Not enough space to write message, size=1282 space used=16 total size=1296
+Not enough space to write message, size=1282 space used=16 total size=1296
+Not enough space to write message, size=1288 space used=16 total size=1296
+Not enough space to write message, size=1281 space used=16 total size=1296
+Not enough space to write message, size=1288 space used=16 total size=1296
+Not enough space to write message, size=1283 space used=16 total size=1296
+[Server] Snapshot send failed (size=1309B, pid=0). Detail: Writing past the end of the buffer, size is 1309 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1311B, pid=0). Detail: Writing past the end of the buffer, size is 1311 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1304B, pid=0). Detail: Writing past the end of the buffer, size is 1304 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1304B, pid=0). Detail: Writing past the end of the buffer, size is 1304 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1306B, pid=0). Detail: Writing past the end of the buffer, size is 1306 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1306B, pid=0). Detail: Writing past the end of the buffer, size is 1306 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1306B, pid=0). Detail: Writing past the end of the buffer, size is 1306 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1308B, pid=0). Detail: Writing past the end of the buffer, size is 1308 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1314B, pid=0). Detail: Writing past the end of the buffer, size is 1314 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1316B, pid=0). Detail: Writing past the end of the buffer, size is 1316 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1318B, pid=0). Detail: Writing past the end of the buffer, size is 1318 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1322B, pid=0). Detail: Writing past the end of the buffer, size is 1322 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1326B, pid=0). Detail: Writing past the end of the buffer, size is 1326 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1328B, pid=0). Detail: Writing past the end of the buffer, size is 1328 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1328B, pid=0). Detail: Writing past the end of the buffer, size is 1328 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1328B, pid=0). Detail: Writing past the end of the buffer, size is 1328 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1328B, pid=0). Detail: Writing past the end of the buffer, size is 1328 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1326B, pid=0). Detail: Writing past the end of the buffer, size is 1326 bytes but remaining capacity is 1280 bytes
+[Server] Snapshot send failed (size=1326B, pid=0). Detail: Writing past the end of the buffer, size is 1326 bytes but remaining capacity is 1280 bytes
+[Server] tick=13375 round=5/10 elapsed=19,9s alive=188 toSpawn=0/492 players=1 disabled=0
+[Server] tick=13500 round=5/10 elapsed=21,9s alive=127 toSpawn=0/492 players=1 disabled=0
+[Server] tick=13625 round=5/10 elapsed=23,9s alive=60 toSpawn=0/492 players=1 disabled=0
+[Server] tick=13750 round=5/10 elapsed=25,9s alive=30 toSpawn=0/492 players=1 disabled=0
+[Server] tick=13875 round=5/10 elapsed=27,9s alive=14 toSpawn=0/492 players=1 disabled=0
+[Server] tick=14000 round=5/10 elapsed=29,9s alive=14 toSpawn=0/492 players=1 disabled=0
+[Server] tick=14125 round=5/10 elapsed=31,9s alive=14 toSpawn=0/492 players=1 disabled=0
+[Server] Player 0 disconnected: Timeout
+[Server] No clients remaining ΓÇö resetting to idle.
+[Server] state: phase InRoundΓåÆPreGame round 5ΓåÆ0 tick=14127 enemies=0 players=0

@@ -1,0 +1,24 @@
+{
+    "name": "DGSvsHS.Server",
+    "rootNamespace": "DGSvsHS.Server",
+    "references": [
+        "DGSvsHS.Gameplay",
+        "DGSvsHS.Net",
+        "DGSvsHS.Net.Ngo",
+        "Unity.Entities",
+        "Unity.Collections",
+        "Unity.Burst",
+        "Unity.Mathematics"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "WITH_DGS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

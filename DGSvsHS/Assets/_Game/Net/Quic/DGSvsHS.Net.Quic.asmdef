@@ -1,0 +1,19 @@
+{
+    "name": "DGSvsHS.Net.Quic",
+    "rootNamespace": "DGSvsHS.Net.Quic",
+    "references": [
+        "DGSvsHS.Gameplay",
+        "DGSvsHS.Net"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "!WITH_DGS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

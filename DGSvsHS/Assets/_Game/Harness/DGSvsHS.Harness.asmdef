@@ -1,0 +1,18 @@
+{
+    "name": "DGSvsHS.Harness",
+    "rootNamespace": "DGSvsHS.Harness",
+    "references": [
+        "DGSvsHS.Gameplay",
+        "DGSvsHS.Net",
+        "DGSvsHS.Client"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

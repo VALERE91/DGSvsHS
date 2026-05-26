@@ -1,0 +1,188 @@
+# =====================================================================
+# DGSvsHS .gitignore
+# Lives at B:/DGSvsHS/.gitignore — the repo root, parent of the Unity
+# project folder. Covers Unity 6, JetBrains Rider / Visual Studio,
+# Windows/macOS/Linux OS noise, and project-specific build + trial output.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Unity auto-generated folders — never commit these. They are rebuilt
+# from Assets/ + ProjectSettings/ + Packages/ on first open.
+# ---------------------------------------------------------------------
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+
+# Asset import worker / asset import pipeline scratch
+[Aa]ssets/AssetStoreTools*
+
+# Unity recorder / profiler output
+[Rr]ecordings/
+
+# Visual Scripting cache (we don't use it but Unity 6 may generate)
+[Aa]ssets/Plugins/Unity.VisualScripting.Generated/
+
+# Crash report
+sysinfo.txt
+crashlytics-build.properties
+
+# ---------------------------------------------------------------------
+# Unity-generated meta files for files that don't exist (rare but messy)
+# ---------------------------------------------------------------------
+*.tmp
+*.user
+
+# ---------------------------------------------------------------------
+# Project-specific build output — DGSvsHS builds land under Build/<date>/
+# per Samuel's convention (Build/2026-05-22/Server/, etc.)
+# ---------------------------------------------------------------------
+/Build/
+/Builds/
+/DGSvsHS/Build/
+/DGSvsHS/Builds/
+
+# ---------------------------------------------------------------------
+# Project-specific trial output — NDJSON logs from TrialRunner and any
+# wattmeter / benchmark data. Large, regenerable, never source.
+# ---------------------------------------------------------------------
+*.ndjson
+trial_*.json
+trial_*.log
+/Trials/
+/Results/
+wattmeter_*.csv
+
+# ---------------------------------------------------------------------
+# JetBrains Rider (Samuel's primary IDE for this project)
+# ---------------------------------------------------------------------
+.idea/
+*.sln.DotSettings.user
+*.csproj.DotSettings.user
+_ReSharper.Caches/
+_ReSharper*/
+
+# ---------------------------------------------------------------------
+# Visual Studio
+# ---------------------------------------------------------------------
+.vs/
+*.suo
+*.userprefs
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+ExportedObj/
+.consulo/
+
+# .NET / NuGet (if anyone adds them)
+[Bb]in/
+packages/
+*.nupkg
+
+# ---------------------------------------------------------------------
+# Visual Studio Code
+# ---------------------------------------------------------------------
+.vscode/
+*.code-workspace
+
+# ---------------------------------------------------------------------
+# Operating-system noise
+# ---------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ---------------------------------------------------------------------
+# Editor backup / swap files
+# ---------------------------------------------------------------------
+*.swp
+*.swo
+*~.nib
+*.bak
+*.orig
+*.rej
+
+# ---------------------------------------------------------------------
+# Python (any scripts for analyzing trial NDJSON, plotting, etc.)
+# ---------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ---------------------------------------------------------------------
+# Rust (for the Bevy server side / dgsvshs_socket cdylib — even though
+# it lives in a sibling repo, easy to share gitignore across)
+# ---------------------------------------------------------------------
+target/
+Cargo.lock.bak
+**/*.rs.bk
+
+# ---------------------------------------------------------------------
+# Native libraries built for the QUIC client P/Invoke shim. These get
+# dropped into Assets/Plugins/<platform>/; if you add them to a build,
+# remove them from this ignore list or place them in an unignored path.
+# ---------------------------------------------------------------------
+# dgsvshs_socket.dll
+# libdgsvshs_socket.so
+# libdgsvshs_socket.dylib
+
+# ---------------------------------------------------------------------
+# Claude Code session artifacts — keep CLAUDE.md tracked, ignore
+# transient session state if any tool ever writes one
+# ---------------------------------------------------------------------
+.claude/
+.claude-*
+# Do NOT ignore CLAUDE.md itself — that's the handoff doc.
+!CLAUDE.md
+
+# ---------------------------------------------------------------------
+# Large media that doesn't belong in git (use Git LFS if you need it)
+# ---------------------------------------------------------------------
+# Uncomment to ignore by extension; we don't use these today
+# *.psd
+# *.mp4
+# *.wav
+# *.mp3
+
+# ---------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------
+*.log
+.env
+.env.local
+node_modules/

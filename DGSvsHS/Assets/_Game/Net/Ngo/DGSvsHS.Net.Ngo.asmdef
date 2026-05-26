@@ -1,0 +1,23 @@
+{
+    "name": "DGSvsHS.Net.Ngo",
+    "rootNamespace": "DGSvsHS.Net.Ngo",
+    "references": [
+        "DGSvsHS.Gameplay",
+        "DGSvsHS.Net",
+        "Unity.Netcode.Runtime",
+        "Unity.Netcode.Components",
+        "Unity.Networking.Transport",
+        "Unity.Collections"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "WITH_DGS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
