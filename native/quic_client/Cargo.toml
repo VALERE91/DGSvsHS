@@ -1,0 +1,24 @@
+[package]
+name = "dgsvshs_quic_client"
+version = "0.1.0"
+edition = "2021"
+description = "QUIC client for DGSvsHS — exposes a Rust API and a C ABI (consumed by the Unity client via P/Invoke and by any Rust caller via the crate API)."
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "dgsvshs_socket"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+quinn = "0.10"
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "io-util", "time"] }
+bytes = "1"
+thiserror = "2"
+tracing = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
