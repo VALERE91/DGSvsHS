@@ -148,7 +148,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1bcbc00e667bb0f409491afeb190f6a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: DGSvsHS.Client::DGSvsHS.Client.ClientMain
-  Host: 127.0.0.1
+  Host: 192.168.144.107
   Port: 7777
   AutoConnect: 1
   UnitSprite: {fileID: 0}

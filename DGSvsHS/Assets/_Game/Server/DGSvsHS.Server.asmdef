@@ -8,7 +8,8 @@
         "Unity.Entities",
         "Unity.Collections",
         "Unity.Burst",
-        "Unity.Mathematics"
+        "Unity.Mathematics",
+        "DGSvsHS.Server.BareBone"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -17,7 +18,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [
-        "WITH_DGS"
     ],
     "versionDefines": [],
     "noEngineReferences": false
