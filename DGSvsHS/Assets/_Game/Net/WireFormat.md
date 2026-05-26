@@ -29,6 +29,23 @@ The transport choice (UDP, QUIC, etc.) is per-implementation; the bytes inside `
 | 0x20 | S → C     | `Snapshot`      | unreliable  | Sent at snapshot rate (Full or Delta) |
 | 0xF0 | S → C     | `Disconnect`    | reliable    | Reason byte                          |
 
+### Transport-level requirements (QUIC builds only)
+
+Implementations that use QUIC as the underlying transport (Bevy and Arch servers; the Unity client when in HS mode) MUST advertise the **ALPN identifier `dgsvshs/1`** on both sides of the connection. This is enforced by `System.Net.Quic` and recommended by every other QUIC stack — without a matching ALPN string the TLS 1.3 handshake closes with `no_application_protocol` (RFC 9000 §8) before any application data flows.
+
+- **Rust client / Bevy server**: in the `rustls::ClientConfig` / `rustls::ServerConfig`, set
+  ```rust
+  config.alpn_protocols = vec![b"dgsvshs/1".to_vec()];
+  ```
+- **C# Arch server**: in `QuicListenerOptions` and `QuicServerConnectionOptions`,
+  ```csharp
+  ApplicationProtocols = new() { new SslApplicationProtocol("dgsvshs/1") };
+  ```
+
+Exact case-sensitive string match; no leading/trailing whitespace. The NGO/UDP transport used by the Unity DOTS server is unaffected — ALPN is a TLS-layer concept and NGO doesn't speak TLS.
+
+If the protocol-version field in `ServerWelcome` is bumped past v3, the ALPN string SHOULD be bumped in lockstep (`dgsvshs/2`, etc.) so old clients/servers fail at the handshake layer rather than at the application-version-check layer — gives a cleaner error and avoids accidental cross-version connections.
+
 ---
 
 ## 2. Connection lifecycle

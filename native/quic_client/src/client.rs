@@ -232,10 +232,12 @@ async fn open_connection(
 }
 
 fn make_client_config() -> quinn::ClientConfig {
-    let crypto = rustls::ClientConfig::builder()
+    let mut crypto = rustls::ClientConfig::builder()
         .with_safe_defaults()
         .with_custom_certificate_verifier(SkipServerVerification::new())
         .with_no_client_auth();
+
+    crypto.alpn_protocols = vec![b"dgsvshs/1".to_vec()];
 
     let mut client_config = quinn::ClientConfig::new(Arc::new(crypto));
 
