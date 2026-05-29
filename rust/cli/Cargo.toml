@@ -5,6 +5,3 @@ edition = "2024"
 
 [dependencies]
 gameplay = { path = "../gameplay" }
-tracing-subscriber = "0.3"
-anyhow = "1"
-thiserror = "2"

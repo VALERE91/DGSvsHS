@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-thiserror = "2"
-tracing = "0.1"
-bevy = {version = "0.18.1", default-features = false, features = [
-    "2d"
-]}
-avian2d = "0.6.1"
+bevy = {version = "0.18.1", default-features = false, features = ["bevy_log"]}
+log = "0.4.30"
+libc = "0.2.186"
+mimalloc = "0.1.52"
+quiche = "0.29"
