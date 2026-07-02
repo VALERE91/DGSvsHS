@@ -1,19 +1,22 @@
-use std::fs;
-use bevy::log::{error, info};
+// MicroVM boot setup for the Linux server image. Despite the historical name,
+// this plugin's ONLY remaining job is bringing the network up inside the
+// initramfs microVM — the per-frame stats/metrics systems were removed (unused;
+// they cost ~1 ms/frame and an O(enemies) count every 50 ms).
+//
+// On Linux it: mounts /proc + /sys, loads the virtio_net kernel modules by hand
+// (no modprobe in the initramfs), and statically configures eth0 for QEMU
+// SLIRP's 10.0.2.0/24. On non-Linux it is a no-op.
+//
+// If you need the old /tmp/stats.log + `SERVER STATS` heartbeat back for a power
+// trial, restore them from git history (they read /proc/self/statm + /proc/meminfo).
+
 use bevy::prelude::*;
-
-use crate::game::sim::components::{Enemy, Lifecycle, RoundState, WorldClock};
-
-/// Counts FixedUpdate runs in the current stats window. `write_stats_file`
-/// reads it, computes inner_fps as `tick_count / elapsed`, then resets to 0.
-#[derive(Resource, Default)]
-struct SimTickPace {
-    tick_count: u32,
-}
+#[cfg(target_os = "linux")]
+use bevy::log::{error, info};
 
 pub struct MicroSystemMetrics;
 impl Plugin for MicroSystemMetrics {
-    fn build(&self, app: &mut App) {
+    fn build(&self, _app: &mut App) {
         #[cfg(target_os = "linux")]
         {
             mount_pseudo_filesystems();
@@ -26,18 +29,7 @@ impl Plugin for MicroSystemMetrics {
             // Then statically configure eth0 for QEMU SLIRP's 10.0.2.0/24.
             bring_up_eth0();
         }
-
-        if cfg!(target_os = "linux") {
-            app.init_resource::<SimTickPace>()
-               .add_systems(FixedUpdate, sample_sim_tick_pace)
-               .add_systems(Update, (log_metrics, write_stats_file));
-        }
     }
-}
-
-/// Runs on every FixedUpdate tick. Increments the in-window tick counter.
-fn sample_sim_tick_pace(mut pace: ResMut<SimTickPace>) {
-    pace.tick_count += 1;
 }
 
 #[cfg(target_os = "linux")]
@@ -214,119 +206,4 @@ fn bring_up_eth0() {
         "[eth0] up {}.{}.{}.{}/{}.{}.{}.{}",
         ipv4[0], ipv4[1], ipv4[2], ipv4[3], mask[0], mask[1], mask[2], mask[3]
     );
-}
-
-fn read_memory_usage() -> Option<f64> {
-    let status = fs::read_to_string("/proc/self/statm").ok()?;
-    let parts: Vec<&str> = status.split_whitespace().collect();
-
-    if let Some(rss_pages) = parts.get(1) {
-        let pages: f64 = rss_pages.parse().unwrap_or(0.0);
-        let megabytes = (pages * 4096.0) / (1024.0 * 1024.0);
-        return Some(megabytes);
-    }
-    None
-}
-
-fn read_total_vm_memory() -> Option<f64> {
-    // Returns MemTotal - MemAvailable in MB — i.e. "memory in use by the VM."
-    // No hardcoded ceiling so the figure stays accurate if QEMU's -m changes.
-    let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
-    let mut total_kb: Option<f64> = None;
-    let mut avail_kb: Option<f64> = None;
-    for line in meminfo.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        let kb = parts.get(1).and_then(|s| s.parse::<f64>().ok());
-        if line.starts_with("MemTotal:") {
-            total_kb = kb;
-        } else if line.starts_with("MemAvailable:") {
-            avail_kb = kb;
-        }
-    }
-    let (t, a) = (total_kb?, avail_kb?);
-    Some((t - a) / 1024.0)
-}
-
-/// Overwrites /tmp/stats.log every 50 ms with a single-line JSON snapshot
-/// the test-harness recorder grabs via `qm terminal` from the Proxmox host.
-fn write_stats_file(
-    time: Res<Time>,
-    mut acc: Local<f32>,
-    mut outer_frames: Local<u32>,
-    mut primed: Local<bool>,
-    mut pace: ResMut<SimTickPace>,
-    clock: Res<WorldClock>,
-    lifecycle: Res<Lifecycle>,
-    round: Res<RoundState>,
-    enemies: Query<(), With<Enemy>>,
-) {
-    *outer_frames += 1;
-    *acc += time.delta().as_secs_f32();
-    if *acc < 0.05 {
-        return;
-    }
-    if !*primed {
-        // First flush: counters reflect garbage warmup window — reset and skip.
-        *primed = true;
-        *acc = 0.0;
-        *outer_frames = 0;
-        pace.tick_count = 0;
-        return;
-    }
-    let elapsed = *acc;
-    let outer_fps = *outer_frames as f32 / elapsed;
-    // Sim FPS = ticks counted in the window / wall-clock elapsed, capped at
-    // outer_fps. The sim runs INSIDE the outer Update loop — a sim step that
-    // hasn't reached the next outer Update is not observable from the outside
-    // (no snapshot, no network broadcast). So capping at outer reflects the
-    // sim's externally-visible rate, which is what matters for the trial.
-    let inner_fps = (pace.tick_count as f32 / elapsed).min(outer_fps);
-    pace.tick_count = 0;
-    let alive = enemies.iter().count();
-    let spawned = round.spawn_target.saturating_sub(round.spawns_remaining);
-    let t = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0);
-    let json = format!(
-        "{{\"t\":{:.3},\"inner_fps\":{:.2},\"outer_fps\":{:.2},\"to_spawn\":{},\"spawned\":{},\"alive\":{},\"tick\":{},\"state\":\"{:?}\"}}\n",
-        t, inner_fps, outer_fps, round.spawn_target, spawned, alive, clock.0, *lifecycle,
-    );
-    let _ = fs::write("/tmp/stats.log", json);
-    *acc = 0.0;
-    *outer_frames = 0;
-}
-
-fn log_metrics(
-    time: Res<Time>,
-    mut timer: Local<f32>,
-    clock: Res<WorldClock>,
-    lifecycle: Res<Lifecycle>,
-    round: Res<RoundState>,
-    enemies: Query<(), With<Enemy>>,
-) {
-    *timer += time.delta().as_secs_f32();
-    if *timer > 5.0 {
-        // 3. Add explicit error handling so it doesn't fail silently
-        match (read_memory_usage(), read_total_vm_memory()) {
-            (Some(mb), Some(mb_vm)) => {
-                let alive = enemies.iter().count();
-                info!(
-                    "SERVER STATS | RAM (RSS): {:.2} MB | RAM (VM) : {:.2} MB | Uptime: {:.1}s | tick={} bodies={} state={:?} toSpawn={}/{}",
-                    mb,
-                    mb_vm,
-                    time.elapsed_secs(),
-                    clock.0,
-                    alive,
-                    *lifecycle,
-                    round.spawns_remaining,
-                    round.spawn_target,
-                );
-            }
-            _ => {
-                error!("Could not read memory metrics from /proc! Is the pseudo-filesystem mounted?");
-            }
-        }
-        *timer = 0.0;
-    }
 }

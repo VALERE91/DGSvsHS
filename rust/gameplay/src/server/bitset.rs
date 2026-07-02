@@ -45,6 +45,29 @@ impl IdBitSet {
         })
     }
 
+    /// Iterate ids present in `self` but not in `other` (set difference),
+    /// scanning at the word level so cost is `O(1024 words + result)` rather
+    /// than `O(id space)`. Used to pull the "spawn" set (current − confirmed)
+    /// without touching every enemy.
+    pub fn iter_diff<'a>(&'a self, other: &'a IdBitSet) -> impl Iterator<Item = u16> + 'a {
+        self.bits
+            .iter()
+            .zip(other.bits.iter())
+            .enumerate()
+            .flat_map(|(i, (&a, &b))| {
+                let mut w = a & !b;
+                std::iter::from_fn(move || {
+                    if w == 0 {
+                        None
+                    } else {
+                        let tz = w.trailing_zeros();
+                        w &= w - 1;
+                        Some(((i << 6) + tz as usize) as u16)
+                    }
+                })
+            })
+    }
+
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.bits.iter().map(|w| w.count_ones() as usize).sum()

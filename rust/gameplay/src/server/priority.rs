@@ -65,6 +65,7 @@ pub fn select_for_full(
     out_selected: &mut Vec<EnemySnap>,
     scratch: &mut Vec<ScoredEnemy>,
 ) {
+    crate::hot_span!("select_for_full");
     out_selected.clear();
     scratch.clear();
 
@@ -86,8 +87,9 @@ pub fn select_for_full(
     }
 }
 
-/// `current_ids` is the set of current enemy ids, built ONCE per tick by the
-/// caller (recipient-independent) and shared across recipients.
+/// `current_ids` is the set of current enemy ids, and `current_index_by_id` the
+/// matching `id → current-enemy index` table (`-1` = absent) — both built ONCE
+/// per tick by the caller (recipient-independent) and shared across recipients.
 /// `scratch_baseline_index` is a reusable `id → baseline index` table (length
 /// covering the u16 id space, `-1` = absent); filled and reset within the call.
 #[allow(clippy::too_many_arguments)]
@@ -97,6 +99,7 @@ pub fn select_for_delta(
     recipient: Vec2,
     confirmed_ids: &IdBitSet,
     current_ids: &IdBitSet,
+    current_index_by_id: &[i32],
     ticks_since_last_sent: &HashMap<u16, u16>,
     enemy_byte_budget: usize,
     out_changed: &mut Vec<EnemyDeltaEntry>,
@@ -106,6 +109,7 @@ pub fn select_for_delta(
     scratch_scored: &mut Vec<ScoredEnemy>,
     scratch_baseline_index: &mut [i32],
 ) {
+    crate::hot_span!("select_for_delta");
     out_changed.clear();
     out_removed.clear();
     out_added.clear();
@@ -142,21 +146,33 @@ pub fn select_for_delta(
     }
     let mut remaining = enemy_byte_budget.saturating_sub(removed_bytes);
 
-    // Lane 2: spawns = current − confirmed. Score all candidates, then take the
-    // closest `min(MaxSpawns, fits)` via quickselect (uniform entry size).
+    // Lane 2: spawns = current − confirmed. Score candidates, then take the
+    // closest `min(MaxSpawns, fits)` via quickselect (uniform entry size). Once
+    // the recipient has a confirmed set, pull the difference from the bitsets
+    // (O(1024 words + spawns)) instead of scanning the whole enemy list.
     scratch_scored.clear();
     let have_confirmed = !confirmed_ids.is_empty();
-    for (i, e) in current.enemies.iter().enumerate() {
-        let is_pending_spawn = !have_confirmed || !confirmed_ids.contains(e.id);
-        if !is_pending_spawn {
-            continue;
-        }
+    let mut push_spawn = |ci: usize| {
+        let e = &current.enemies[ci];
         let dx = e.pos_x - recipient.x;
         let dy = e.pos_y - recipient.y;
         scratch_scored.push(ScoredEnemy {
-            index: i,
+            index: ci,
             score: dx * dx + dy * dy,
         });
+    };
+    if have_confirmed {
+        for id in current_ids.iter_diff(confirmed_ids) {
+            let ci = current_index_by_id[id as usize];
+            if ci >= 0 {
+                push_spawn(ci as usize);
+            }
+        }
+    } else {
+        // First delta after a full/reset — everything is a spawn.
+        for i in 0..current.enemies.len() {
+            push_spawn(i);
+        }
     }
     let k_spawn = (remaining / ENEMY_SNAP_FULL_BYTES).min(MAX_SPAWNS_PER_SNAPSHOT);
     {
@@ -169,23 +185,31 @@ pub fn select_for_delta(
         remaining -= chosen.len() * ENEMY_SNAP_FULL_BYTES;
     }
 
-    // Lane 3: animation = confirmed ∩ baseline, position changed. Bounded by
-    // `confirmed` (≤ what the client has acked), so a single sort is fine; the
-    // break-on-overflow + free-include semantics are preserved exactly.
+    // Lane 3: animation = confirmed ∩ baseline ∩ current, position changed.
+    // Iterate the confirmed set directly (bounded by what the client has acked)
+    // rather than scanning every current enemy; look up current position by id.
     scratch_scored.clear();
-    for (i, e) in current.enemies.iter().enumerate() {
-        if !have_confirmed || !confirmed_ids.contains(e.id) {
-            continue;
+    if have_confirmed {
+        for id in confirmed_ids.iter() {
+            if scratch_baseline_index[id as usize] < 0 {
+                continue;
+            }
+            let ci = current_index_by_id[id as usize];
+            if ci < 0 {
+                // Confirmed but gone from current — it's a removal (lane 1).
+                continue;
+            }
+            let e = &current.enemies[ci as usize];
+            let dx = e.pos_x - recipient.x;
+            let dy = e.pos_y - recipient.y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let tsls = ticks_since_last_sent.get(&id).copied().unwrap_or(0);
+            let score = dist - STALENESS_WEIGHT * (tsls as f32);
+            scratch_scored.push(ScoredEnemy {
+                index: ci as usize,
+                score,
+            });
         }
-        if scratch_baseline_index[e.id as usize] < 0 {
-            continue;
-        }
-        let dx = e.pos_x - recipient.x;
-        let dy = e.pos_y - recipient.y;
-        let dist = (dx * dx + dy * dy).sqrt();
-        let tsls = ticks_since_last_sent.get(&e.id).copied().unwrap_or(0);
-        let score = dist - STALENESS_WEIGHT * (tsls as f32);
-        scratch_scored.push(ScoredEnemy { index: i, score });
     }
     scratch_scored.sort_unstable_by(cmp_scored);
 
@@ -272,12 +296,21 @@ mod tests {
         b
     }
 
+    fn current_index_of(s: &Snapshot) -> Vec<i32> {
+        let mut idx = vec![-1i32; 1 << 16];
+        for (i, e) in s.enemies.iter().enumerate() {
+            idx[e.id as usize] = i as i32;
+        }
+        idx
+    }
+
     #[test]
     fn delta_classifies_removed_spawn_animation() {
         let baseline = snap_full(10, &[enemy(1, 0.0, 0.0), enemy(2, 5.0, 0.0)]);
         let current = snap_full(11, &[enemy(1, 0.5, 0.0), enemy(3, 10.0, 0.0)]);
         let confirmed = bits(&[1, 2]);
         let current_ids = current_ids_of(&current);
+        let current_index = current_index_of(&current);
         let tsls: HashMap<u16, u16> = HashMap::new();
         let mut changed = Vec::new();
         let mut removed = Vec::new();
@@ -292,6 +325,7 @@ mod tests {
             Vec2::ZERO,
             &confirmed,
             &current_ids,
+            &current_index,
             &tsls,
             10_000,
             &mut changed,
@@ -317,6 +351,7 @@ mod tests {
         let current = snap_full(11, &[enemy(1, 5.0, 0.0)]);
         let confirmed = bits(&[1]);
         let current_ids = current_ids_of(&current);
+        let current_index = current_index_of(&current);
         let tsls = HashMap::new();
         let mut changed = Vec::new();
         let mut removed = Vec::new();
@@ -331,6 +366,7 @@ mod tests {
             Vec2::ZERO,
             &confirmed,
             &current_ids,
+            &current_index,
             &tsls,
             10_000,
             &mut changed,

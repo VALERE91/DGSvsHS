@@ -41,6 +41,10 @@ pub struct BroadcastScratch {
     included: IdBitSet,
     /// Current enemy ids, rebuilt once per tick (recipient-independent).
     current_ids: IdBitSet,
+    /// id → current-enemy index, `-1` = absent. Built once per tick alongside
+    /// `current_ids` and shared across recipients so the delta lanes can look up
+    /// a current enemy by id in O(1) instead of scanning the whole enemy list.
+    current_index: Vec<i32>,
     /// id → baseline index, `-1` = absent. Sized for the full u16 id space;
     /// `select_for_delta` fills and resets the entries it touches.
     baseline_index: Vec<i32>,
@@ -57,6 +61,7 @@ impl Default for BroadcastScratch {
             added: Vec::new(),
             included: IdBitSet::new(),
             current_ids: IdBitSet::new(),
+            current_index: vec![-1; 1 << 16],
             baseline_index: vec![-1; 1 << 16],
             encode_buf: Vec::new(),
         }
@@ -83,10 +88,12 @@ pub fn broadcast_snapshot(
     let fires_bytes = 1 + fires_count * FIRE_EVENT_BYTES;
     let fixed_overhead = 1 /* msg_type */ + SNAPSHOT_HEADER_BYTES + players_bytes + fires_bytes;
 
-    // Recipient-independent: build the current-id set once for all recipients.
+    // Recipient-independent: build the current-id set + id→index map once for
+    // all recipients (reset touched entries after the loop below).
     work.current_ids.clear();
-    for e in snap.enemies.iter() {
+    for (i, e) in snap.enemies.iter().enumerate() {
         work.current_ids.insert(e.id);
+        work.current_index[e.id as usize] = i as i32;
     }
 
     for pid in 0..MAX_PLAYERS as u8 {
@@ -159,6 +166,7 @@ pub fn broadcast_snapshot(
                 anchor,
                 &rstate.confirmed_ids,
                 &work.current_ids,
+                &work.current_index,
                 &rstate.ticks_since_last_sent,
                 enemy_budget,
                 &mut work.changed,
@@ -217,5 +225,11 @@ pub fn broadcast_snapshot(
         let snap_tick = snap.tick;
         let rstate = recipients.ensure(pid);
         rstate.on_snapshot_sent(snap_tick, is_full, &work.included, &work.removed);
+    }
+
+    // Reset only the id→index entries we touched this tick, so the shared map is
+    // all-`-1` for the next tick without an O(id space) fill.
+    for e in snap.enemies.iter() {
+        work.current_index[e.id as usize] = -1;
     }
 }

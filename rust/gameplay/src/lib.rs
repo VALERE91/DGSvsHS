@@ -1,3 +1,54 @@
+/// Enter a Tracy/tracing span for the enclosing scope. Put it at the top of a
+/// hot-path method: `crate::hot_span!("select_for_delta");`. The guard is bound
+/// to `_hot_span`, so it closes when the scope ends.
+///
+/// Gated behind the `tracy` cargo feature: with it off (the default), this
+/// expands to nothing — zero overhead for power-trial builds. Enable it with
+/// `--features tracy` to stream to a Tracy profiler.
+///
+/// Only span per-tick / per-fire / per-recipient methods. Do NOT span per-enemy
+/// inner loops (grid.insert, segment_circle_hit, …): millions of span
+/// enter/exits per tick would swamp Tracy and distort the timings you're trying
+/// to read.
+#[cfg(feature = "tracy")]
+#[macro_export]
+macro_rules! hot_span {
+    ($name:expr) => {
+        let _hot_span = bevy::log::info_span!($name).entered();
+    };
+}
+
+#[cfg(not(feature = "tracy"))]
+#[macro_export]
+macro_rules! hot_span {
+    ($name:expr) => {};
+}
+
+/// Expression form of [`hot_span!`] for phases that must end before the scope
+/// does: bind the returned guard and `drop(guard)` at the phase boundary. With
+/// the `tracy` feature off it yields `()`, so `drop(guard)` is a harmless no-op.
+#[cfg(feature = "tracy")]
+#[macro_export]
+macro_rules! hot_span_guard {
+    ($name:expr) => {
+        bevy::log::info_span!($name).entered()
+    };
+}
+
+#[cfg(not(feature = "tracy"))]
+#[macro_export]
+macro_rules! hot_span_guard {
+    ($name:expr) => {
+        $crate::NoopSpan
+    };
+}
+
+/// Stand-in guard returned by [`hot_span_guard!`] when the `tracy` feature is
+/// off. Zero-sized and deliberately non-`Copy` so `drop(guard)` at a phase
+/// boundary is a real (no-op) move, not a lint-triggering drop-of-Copy.
+#[doc(hidden)]
+pub struct NoopSpan;
+
 mod system_metrics;
 pub mod game;
 pub mod network;
@@ -11,8 +62,6 @@ use bevy::log::{LogPlugin, info};
 use bevy::prelude::*;
 
 use mimalloc::MiMalloc;
-
-use crate::game::constants::TICKS_PER_SECOND;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;

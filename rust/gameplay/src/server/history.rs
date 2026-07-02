@@ -34,6 +34,7 @@ impl WorldStateHistory {
 
     /// Copy `snapshot` into the head slot and advance.
     pub fn record(&mut self, snapshot: &Snapshot) {
+        crate::hot_span!("history_record");
         self.ring[self.head].copy_from(snapshot);
         self.head = (self.head + 1) % self.capacity;
         if self.count < self.capacity {

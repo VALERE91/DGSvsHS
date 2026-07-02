@@ -3,5 +3,10 @@ name = "cli"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Passthrough so `cargo run -p cli --features tracy` streams the server's spans
+# to a Tracy profiler. Off by default → zero tracing overhead in power trials.
+tracy = ["gameplay/tracy"]
+
 [dependencies]
 gameplay = { path = "../gameplay" }

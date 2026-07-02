@@ -135,6 +135,7 @@ impl EnemyGrid {
         radius: f32,
         out: &mut Vec<Entity>,
     ) {
+        crate::hot_span!("grid_collect_along_segment");
         out.clear();
         let Some((cxmin, cymin, cxmax, cymax)) =
             self.geom.segment_cell_range(ax, ay, bx, by, radius)
@@ -158,16 +159,9 @@ impl Default for EnemyGrid {
 
 pub fn rebuild_grid(mut grid: ResMut<EnemyGrid>, q: Query<(Entity, &Pos2D)>) {
     grid.clear();
-    let mut n = 0usize;
     for (e, p) in q.iter() {
         grid.insert(e, *p);
-        n += 1;
     }
-    // info!(
-    //     "[spatial] grid rebuilt: {} entities across {} cells",
-    //     n,
-    //     grid.cells.len()
-    // );
 }
 
 // ---------- Beam math ----------
@@ -241,6 +235,7 @@ pub fn beam_hits(
     cell_scratch: &mut Vec<Entity>,
     out: &mut Vec<BeamHit>,
 ) {
+    crate::hot_span!("beam_hits");
     let end_x = origin_x + dir_x * length;
     let end_y = origin_y + dir_y * length;
     grid.collect_along_segment(origin_x, origin_y, end_x, end_y, radius, cell_scratch);

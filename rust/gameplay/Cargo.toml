@@ -3,8 +3,14 @@ name = "gameplay"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Off by default so power-trial builds carry zero tracing overhead. Enable with
+# `--features tracy` to stream Bevy's system spans + our hot-path spans (see the
+# `hot_span!` macro in lib.rs) to a Tracy profiler.
+tracy = ["bevy/trace_tracy"]
+
 [dependencies]
-bevy = {version = "0.18.1", default-features = false, features = ["bevy_log", "trace_tracy", "debug"]}
+bevy = {version = "0.18.1", default-features = false, features = ["bevy_log", "debug"]}
 avian2d = {version = "0.5", default-features = false, features = ["2d", "f32", "parry-f32"]}
 log = "0.4.30"
 libc = "0.2.186"
