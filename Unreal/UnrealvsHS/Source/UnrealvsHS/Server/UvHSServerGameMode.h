@@ -25,11 +25,19 @@ public:
 	UPROPERTY(EditAnywhere, Category="Server")
 	int32 SimulatedClients = 0;          // bootstrap N players without real network (Phase 2A trial)
 
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(EditAnywhere, Category="Server")
+	bool bAutoSmokeTestInEditor = true;  // editor-only: if SimulatedClients==0, force 1 sweep-firing bot so PIE auto-runs rounds 1→10 with no client. Not present in Shipping.
+#endif
+
 	UPROPERTY(EditAnywhere, Category="Server")
 	int32 RngSeed = (int32)0xC0FFEE;     // truncated u64 for inspector; full seed used at runtime
 
 	UPROPERTY(EditAnywhere, Category="Server")
 	bool bGodMode = true;                 // disable contact-disable for compute-only trials
+
+	UPROPERTY(EditAnywhere, Category="Server")
+	bool bUseChaosPhysics = false;        // false = hand-rolled force integration (no Chaos, no contacts, O(N)); true = Chaos rigid bodies. CLI: -UseChaos=true|false
 
 	UPROPERTY(EditAnywhere, Category="Server")
 	float HeartbeatIntervalSec = 1.0f;    // console log cadence (separate from /tmp/stats.log @ 20 Hz)

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -36,7 +37,8 @@ namespace DGSvsHS.Server.Dots
             var headers = EntityManager.GetBuffer<RewindFrameHeader>(globals);
             var ids = EntityManager.GetBuffer<RewindId>(globals);
             var positions = EntityManager.GetBuffer<RewindPos>(globals);
-            
+            var offsets = EntityManager.GetBuffer<RewindCellOffset>(globals);
+
             int aliveCount = _aliveEnemiesQuery.CalculateEntityCount();
             var aliveIds = new NativeArray<ushort>(aliveCount, Allocator.TempJob);
             var aliveEntities = new NativeArray<Entity>(aliveCount, Allocator.TempJob);
@@ -48,20 +50,25 @@ namespace DGSvsHS.Server.Dots
                 writeIdx++;
             }
 
-            // Map: enemyId → indexInAliveArrays. NativeParallelHashMap for fast lookup in the resolver.
+            // Aggregate "claimed" kills across all fires this tick (first-claim-wins,
+            // matches Bevy `kill_owner` semantics + DOTS shared KillFlags).
             var idToIndex = new NativeParallelHashMap<ushort, int>(aliveCount, Allocator.TempJob);
             for (int i = 0; i < writeIdx; i++) idToIndex.Add(aliveIds[i], i);
-            
+
             var killFlags = new NativeArray<byte>(writeIdx, Allocator.TempJob);
 
-            // Pull RTT array into Native form for Burst.
             var rttCopy = new NativeArray<float>(Constants.MaxPlayers, Allocator.TempJob);
             for (int i = 0; i < Constants.MaxPlayers; i++) rttCopy[i] = PlayerRttMs[i];
 
-            // Output buffer for new FireEvent entries
             var newFires = new NativeList<FireEventBuf>(pendingFires.Length, Allocator.TempJob);
             var pendingCopy = new NativeArray<PendingFire>(pendingFires.Length, Allocator.TempJob);
             for (int i = 0; i < pendingFires.Length; i++) pendingCopy[i] = pendingFires[i];
+
+            // by_id maps are reused across every fire — allocate them here so
+            // Burst doesn't have to. Sized for the current live-enemy population
+            // (worst case for a bracket slot once the ring is settled).
+            var floorById = new NativeParallelHashMap<ushort, float2>(aliveCount, Allocator.TempJob);
+            var ceilById = new NativeParallelHashMap<ushort, float2>(aliveCount, Allocator.TempJob);
 
             new ResolveJob
             {
@@ -70,15 +77,22 @@ namespace DGSvsHS.Server.Dots
                 Headers = headers.AsNativeArray(),
                 Ids = ids.AsNativeArray(),
                 Positions = positions.AsNativeArray(),
+                Offsets = offsets.AsNativeArray(),
                 RingHead = meta.Head,
                 RingCount = meta.Count,
                 RingStride = meta.Stride,
+                CellCount = meta.CellCount,
+                CellsPerSide = meta.CellsPerSide,
+                HalfCells = Constants.GridHalfCells,
+                CellSize = Constants.GridCellSize,
                 IdToIndex = idToIndex,
                 Rtt = rttCopy,
                 KillFlags = killFlags,
                 NewFires = newFires,
+                FloorById = floorById,
+                CeilById = ceilById,
             }.Run();
-            
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
             for (int i = 0; i < writeIdx; i++)
             {
@@ -88,7 +102,6 @@ namespace DGSvsHS.Server.Dots
             ecb.Playback(EntityManager);
             ecb.Dispose();
 
-            // Append new fire events to the persistent buffer for snapshot capture.
             var fireBuf = EntityManager.GetBuffer<FireEventBuf>(globals);
             for (int i = 0; i < newFires.Length; i++) fireBuf.Add(newFires[i]);
 
@@ -101,6 +114,8 @@ namespace DGSvsHS.Server.Dots
             rttCopy.Dispose();
             newFires.Dispose();
             pendingCopy.Dispose();
+            floorById.Dispose();
+            ceilById.Dispose();
         }
 
         [BurstCompile]
@@ -111,19 +126,37 @@ namespace DGSvsHS.Server.Dots
             [ReadOnly] public NativeArray<RewindFrameHeader> Headers;
             [ReadOnly] public NativeArray<RewindId> Ids;
             [ReadOnly] public NativeArray<RewindPos> Positions;
+            [ReadOnly] public NativeArray<RewindCellOffset> Offsets;
+
             public int RingHead;
             public int RingCount;
             public int RingStride;
+            public int CellCount;
+            public int CellsPerSide;
+            public int HalfCells;
+            public float CellSize;
+
             [ReadOnly] public NativeParallelHashMap<ushort, int> IdToIndex;
             [ReadOnly] public NativeArray<float> Rtt;
             [NativeDisableParallelForRestriction] public NativeArray<byte> KillFlags;
             public NativeList<FireEventBuf> NewFires;
+            public NativeParallelHashMap<ushort, float2> FloorById;
+            public NativeParallelHashMap<ushort, float2> CeilById;
 
             public void Execute()
             {
                 float hitRadius = Constants.EnemyRadius + Constants.BeamRadius;
                 float hitRadiusSq = hitRadius * hitRadius;
                 float maxRange = Constants.BulletMaxRange;
+                // Beam AABB is expanded by hit_r AND one cell — bracketing-lerp
+                // can shift an enemy across a cell boundary, mirrors Bevy.
+                float queryR = hitRadius + CellSize;
+
+                // by_id cross-frame lookup, reused across fires that share the
+                // same bracketing slots. Maps are owned by the caller (Burst
+                // doesn't allow NativeParallelHashMap allocation inside jobs).
+                int loadedFloorSlot = -1;
+                int loadedCeilSlot = -1;
 
                 for (int fi = 0; fi < Pending.Length; fi++)
                 {
@@ -131,67 +164,107 @@ namespace DGSvsHS.Server.Dots
                     float oneWayMs = (f.PlayerId < Rtt.Length ? Rtt[f.PlayerId] : 60f) * 0.5f;
                     float viewTickF = ComputeViewTickF(CurrentTick, oneWayMs);
 
-                    // Find bracketing ring slots.
                     if (!FindBracketingSlots(viewTickF, out int floorSlot, out int ceilSlot, out float alpha))
                         continue;
 
                     var floorHdr = Headers[floorSlot];
-                    var ceilHdr = Headers[ceilSlot];
-
-                    // Iterate floor slot's enemies; lerp position with ceil entry if same id present.
-                    // No spatial grid — brute-force seg-circle. Piercing: collect all hits.
-                    int kills = 0;
+                    var ceilHdr  = Headers[ceilSlot];
                     int floorStart = floorSlot * RingStride;
-                    int ceilStart = ceilSlot * RingStride;
+                    int ceilStart  = ceilSlot  * RingStride;
+                    int floorOffStart = floorSlot * (CellCount + 1);
+                    int ceilOffStart  = ceilSlot  * (CellCount + 1);
+                    bool sameSlot = floorSlot == ceilSlot;
 
-                    for (int i = 0; i < floorHdr.Count; i++)
+                    // Repopulate by_id maps only when the slot identity changes.
+                    if (floorSlot != loadedFloorSlot)
                     {
-                        ushort id = Ids[floorStart + i].Value;
-                        float2 fPos = Positions[floorStart + i].Value;
-                        float2 pos = fPos;
-                        // If id exists in ceil slot too, lerp.
-                        for (int j = 0; j < ceilHdr.Count; j++)
+                        FloorById.Clear();
+                        int n = floorHdr.Count;
+                        for (int i = 0; i < n; i++)
                         {
-                            if (Ids[ceilStart + j].Value != id) continue;
-                            float2 cPos = Positions[ceilStart + j].Value;
-                            pos = math.lerp(fPos, cPos, alpha);
-                            break;
+                            FloorById.TryAdd(Ids[floorStart + i].Value, Positions[floorStart + i].Value);
                         }
-                        if (SegmentHits(f.Origin, f.Direction, maxRange, pos, hitRadiusSq))
+                        loadedFloorSlot = floorSlot;
+                    }
+                    if (!sameSlot && ceilSlot != loadedCeilSlot)
+                    {
+                        CeilById.Clear();
+                        int n = ceilHdr.Count;
+                        for (int i = 0; i < n; i++)
                         {
-                            if (IdToIndex.TryGetValue(id, out int aliveIdx))
+                            CeilById.TryAdd(Ids[ceilStart + i].Value, Positions[ceilStart + i].Value);
+                        }
+                        loadedCeilSlot = ceilSlot;
+                    }
+
+                    // Cell range for the beam AABB ± queryR.
+                    float2 origin = f.Origin;
+                    float2 end = origin + f.Direction * maxRange;
+                    if (!SegmentCellRange(origin.x, origin.y, end.x, end.y, queryR,
+                                          out int cxmin, out int cymin, out int cxmax, out int cymax))
+                    {
+                        continue;
+                    }
+
+                    int kills = 0;
+
+                    // Floor pass: lerp each candidate with its ceil match.
+                    for (int cy = cymin; cy <= cymax; cy++)
+                    {
+                        for (int cx = cxmin; cx <= cxmax; cx++)
+                        {
+                            int cellIdx = cy * CellsPerSide + cx;
+                            int rangeStart = Offsets[floorOffStart + cellIdx].Value;
+                            int rangeEnd   = Offsets[floorOffStart + cellIdx + 1].Value;
+                            for (int k = rangeStart; k < rangeEnd; k++)
                             {
-                                if (KillFlags[aliveIdx] == 0)
+                                ushort id = Ids[floorStart + k].Value;
+                                float2 fPos = Positions[floorStart + k].Value;
+                                float2 pos = fPos;
+                                if (!sameSlot && CeilById.TryGetValue(id, out float2 cPos))
                                 {
-                                    KillFlags[aliveIdx] = 1;
-                                    kills++;
+                                    pos = math.lerp(fPos, cPos, alpha);
+                                }
+                                if (SegmentHits(f.Origin, f.Direction, maxRange, pos, hitRadiusSq))
+                                {
+                                    if (IdToIndex.TryGetValue(id, out int aliveIdx))
+                                    {
+                                        if (KillFlags[aliveIdx] == 0)
+                                        {
+                                            KillFlags[aliveIdx] = 1;
+                                            kills++;
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Also include ceil-only enemies (spawned mid-bracket) if alpha ≥ 0.5.
-                    if (alpha >= 0.5f)
+                    // Ceil-only pass: include enemies spawned mid-bracket if alpha ≥ 0.5.
+                    if (alpha >= 0.5f && !sameSlot)
                     {
-                        for (int j = 0; j < ceilHdr.Count; j++)
+                        for (int cy = cymin; cy <= cymax; cy++)
                         {
-                            ushort id = Ids[ceilStart + j].Value;
-                            // Skip if it was in floor.
-                            bool inFloor = false;
-                            for (int i = 0; i < floorHdr.Count; i++)
+                            for (int cx = cxmin; cx <= cxmax; cx++)
                             {
-                                if (Ids[floorStart + i].Value == id) { inFloor = true; break; }
-                            }
-                            if (inFloor) continue;
-                            float2 pos = Positions[ceilStart + j].Value;
-                            if (SegmentHits(f.Origin, f.Direction, maxRange, pos, hitRadiusSq))
-                            {
-                                if (IdToIndex.TryGetValue(id, out int aliveIdx))
+                                int cellIdx = cy * CellsPerSide + cx;
+                                int rangeStart = Offsets[ceilOffStart + cellIdx].Value;
+                                int rangeEnd   = Offsets[ceilOffStart + cellIdx + 1].Value;
+                                for (int k = rangeStart; k < rangeEnd; k++)
                                 {
-                                    if (KillFlags[aliveIdx] == 0)
+                                    ushort id = Ids[ceilStart + k].Value;
+                                    if (FloorById.ContainsKey(id)) continue;
+                                    float2 cPos = Positions[ceilStart + k].Value;
+                                    if (SegmentHits(f.Origin, f.Direction, maxRange, cPos, hitRadiusSq))
                                     {
-                                        KillFlags[aliveIdx] = 1;
-                                        kills++;
+                                        if (IdToIndex.TryGetValue(id, out int aliveIdx))
+                                        {
+                                            if (KillFlags[aliveIdx] == 0)
+                                            {
+                                                KillFlags[aliveIdx] = 1;
+                                                kills++;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -208,6 +281,7 @@ namespace DGSvsHS.Server.Dots
                         KillCount = (byte)math.min(255, kills),
                     });
                 }
+
             }
 
             private bool FindBracketingSlots(float viewTickF, out int floorSlot, out int ceilSlot, out float alpha)
@@ -218,7 +292,6 @@ namespace DGSvsHS.Server.Dots
                 uint viewFloor = (uint)math.floor(viewTickF);
                 uint viewCeil = viewFloor + 1;
 
-                // Linear scan over filled slots — RingCount ≤ SnapshotHistoryTicks.
                 for (int i = 0; i < RingCount; i++)
                 {
                     int slot = (RingHead - 1 - i + Headers.Length) % Headers.Length;
@@ -228,7 +301,6 @@ namespace DGSvsHS.Server.Dots
                 }
                 if (floorSlot < 0)
                 {
-                    // Clamp to oldest if view-time precedes our buffer.
                     int oldest = (RingHead - RingCount + Headers.Length) % Headers.Length;
                     floorSlot = oldest;
                     ceilSlot = oldest;
@@ -242,6 +314,29 @@ namespace DGSvsHS.Server.Dots
                     return true;
                 }
                 alpha = math.saturate(viewTickF - viewFloor);
+                return true;
+            }
+
+            private bool SegmentCellRange(float ax, float ay, float bx, float by, float radius,
+                                          out int cxmin, out int cymin, out int cxmax, out int cymax)
+            {
+                cxmin = cymin = cxmax = cymax = 0;
+                float halfWorld = HalfCells * CellSize;
+                float xmin = math.max(math.min(ax, bx) - radius, -halfWorld);
+                float xmax = math.min(math.max(ax, bx) + radius, halfWorld - 0.001f);
+                float ymin = math.max(math.min(ay, by) - radius, -halfWorld);
+                float ymax = math.min(math.max(ay, by) + radius, halfWorld - 0.001f);
+                if (xmin > xmax || ymin > ymax) return false;
+                if (!CellCoords(xmin, ymin, out cxmin, out cymin)) return false;
+                if (!CellCoords(xmax, ymax, out cxmax, out cymax)) return false;
+                return true;
+            }
+
+            private bool CellCoords(float x, float y, out int cx, out int cy)
+            {
+                cx = (int)math.floor(x / CellSize) + HalfCells;
+                cy = (int)math.floor(y / CellSize) + HalfCells;
+                if (cx < 0 || cy < 0 || cx >= CellsPerSide || cy >= CellsPerSide) return false;
                 return true;
             }
 

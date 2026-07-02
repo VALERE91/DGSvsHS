@@ -158,6 +158,36 @@ namespace UnrealvsHS::Server::Sim
 
 	// ---------- Step 3: PlayerInput ----------
 
+#if !UE_BUILD_SHIPPING
+	// Dev/editor loopback smoke-test: each spawned player stands still and sweeps a
+	// full-circle hitscan every tick (no cooldown gate in PlayerInput), so all
+	// enemies get cleared and rounds auto-advance 1→10 with no network client.
+	// Gated by Ctx.bSimulatedInput (set from SimulatedClients > 0). Pair with
+	// GodMode so contact never disables the still player and firing never stops.
+	// Compiled out of Shipping entirely.
+	void SimulatedClientInput(FSimContext& Ctx)
+	{
+		if (!Ctx.bSimulatedInput || Ctx.Players.Num() == 0) return;
+
+		constexpr float SweepRevsPerSec = 1.0f;
+		constexpr float TwoPi = 2.0f * (float)PI;
+		Ctx.SimulatedAimAngle = FMath::Fmod(
+			Ctx.SimulatedAimAngle + (TwoPi * SweepRevsPerSec * SimDt), TwoPi);
+		const FVector2D Aim(FMath::Cos(Ctx.SimulatedAimAngle), FMath::Sin(Ctx.SimulatedAimAngle));
+
+		for (const FPlayerState& P : Ctx.Players)
+		{
+			FTickInput In;
+			In.PlayerId = P.Id;
+			In.Tick     = Ctx.Tick;
+			In.Move     = FVector2D::ZeroVector;
+			In.Aim      = Aim;
+			In.Flags    = EInputFlags::Fire;
+			Ctx.TickInputs.Add(In);
+		}
+	}
+#endif // !UE_BUILD_SHIPPING
+
 	void PlayerInput(FSimContext& Ctx)
 	{
 		TArray<int32> LatestIdx; LatestIdx.Init(INDEX_NONE, Constants::MaxPlayers);
@@ -344,6 +374,12 @@ namespace UnrealvsHS::Server::Sim
 		// Aggregate killed ids across all fires this tick.
 		TSet<uint16> Killed;
 
+		// Scratch reused across fires. Ceil-frame id→index map + floor-frame id set
+		// make floor↔ceil matching O(N) per fire instead of the old nested-scan
+		// O(N²) that pinned CPU at high enemy counts (the round-10 blowup).
+		TMap<uint16, int32> CeilIdxById;
+		TSet<uint16>        FloorIdSet;
+
 		for (const FPendingFire& F : Ctx.PendingFires)
 		{
 			const float OneWayMs = (F.PlayerId < Ctx.PlayerRttMs.Num() ? Ctx.PlayerRttMs[F.PlayerId] : 60.0f) * 0.5f;
@@ -360,18 +396,24 @@ namespace UnrealvsHS::Server::Sim
 
 			int32 Kills = 0;
 
+			// Build ceil-frame id→index once (O(CeilCount)) so floor→ceil lookup is O(1).
+			CeilIdxById.Reset();
+			CeilIdxById.Reserve(CeilHdr.Count);
+			for (int32 j = 0; j < CeilHdr.Count; ++j)
+			{
+				CeilIdxById.Add(Ring.Ids[CeilStart + j], j);
+			}
+
 			// Lane 1: ids in floor — lerp to ceil if matched.
 			for (int32 i = 0; i < FloorHdr.Count; ++i)
 			{
 				const uint16 Id  = Ring.Ids[FloorStart + i];
 				const FVector2D FPos = Ring.Positions[FloorStart + i];
 				FVector2D Pos = FPos;
-				for (int32 j = 0; j < CeilHdr.Count; ++j)
+				if (const int32* CeilJ = CeilIdxById.Find(Id))
 				{
-					if (Ring.Ids[CeilStart + j] != Id) continue;
-					const FVector2D CPos = Ring.Positions[CeilStart + j];
+					const FVector2D CPos = Ring.Positions[CeilStart + *CeilJ];
 					Pos = FMath::Lerp(FPos, CPos, (double)Alpha);
-					break;
 				}
 				if (SegmentHits(F.Origin, F.Direction, MaxRange, Pos, HitR2))
 				{
@@ -384,15 +426,17 @@ namespace UnrealvsHS::Server::Sim
 			// Lane 2: ids only in ceil (spawned mid-window), gated alpha ≥ 0.5.
 			if (Alpha >= 0.5f)
 			{
+				// Floor id set once (O(FloorCount)) → O(1) "is in floor?" per ceil enemy.
+				FloorIdSet.Reset();
+				FloorIdSet.Reserve(FloorHdr.Count);
+				for (int32 i = 0; i < FloorHdr.Count; ++i)
+				{
+					FloorIdSet.Add(Ring.Ids[FloorStart + i]);
+				}
 				for (int32 j = 0; j < CeilHdr.Count; ++j)
 				{
 					const uint16 Id = Ring.Ids[CeilStart + j];
-					bool bInFloor = false;
-					for (int32 i = 0; i < FloorHdr.Count; ++i)
-					{
-						if (Ring.Ids[FloorStart + i] == Id) { bInFloor = true; break; }
-					}
-					if (bInFloor) continue;
+					if (FloorIdSet.Contains(Id)) continue;
 					const FVector2D Pos = Ring.Positions[CeilStart + j];
 					if (SegmentHits(F.Origin, F.Direction, MaxRange, Pos, HitR2))
 					{
@@ -445,54 +489,121 @@ namespace UnrealvsHS::Server::Sim
 		Ctx.PendingFires.Reset();
 	}
 
-	// ---------- Step 5: EnemySeek (Mass query, parallel-iteration ready) ----------
-	
+	// Nearest-target seek direction (unit vector), deterministic given a slot-sorted
+	// target list. Shared by the Chaos and no-Chaos EnemySeek paths.
+	static FVector2D NearestSeekDir(const FVector2D& EPos, const TArray<FVector2D>& Targets)
+	{
+		double BestSq = TNumericLimits<double>::Max();
+		FVector2D Best = Targets[0];
+		for (const FVector2D& T : Targets)
+		{
+			const double Sq = (T - EPos).SquaredLength();
+			if (Sq < BestSq) { BestSq = Sq; Best = T; }
+		}
+		const double Len = FMath::Sqrt(BestSq);
+		if (Len <= 1e-4) return FVector2D::ZeroVector;
+		return (Best - EPos) / Len;
+	}
+
+	// ---------- Step 5: EnemySeek (drive toward nearest player) ----------
+	//
+	// Chaos mode:    applies a steering force to each enemy's rigid body; the Chaos
+	//                solver integrates it (with linear damping) in the world tick.
+	// No-Chaos mode: adds the drive impulse straight into the Velocity fragment;
+	//                Sim::EnemyIntegrate then applies damping + position integration.
+	// Both reach the same terminal speed: EnemyDriveForce / EnemyMass / damping =
+	// EnemySpeed. Selected by Ctx.bUseChaosPhysics (GameMode bUseChaosPhysics).
 	void EnemySeek(FSimContext& Ctx)
 	{
 		if (!Ctx.MassEntityManager.IsValid()) return;
-		
+
 		struct FTarget { uint8 Slot; FVector2D Pos; };
 		TArray<FTarget> Targets;
 		for (const FPlayerState& P : Ctx.Players)
 		{
 			if (P.bAlive && P.DisableTimer <= 0.0f) Targets.Add({P.Id, P.Position});
 		}
+		if (Targets.Num() == 0) return;  // No active targets → no drive this tick (damping still bleeds velocity in EnemyIntegrate).
+		Targets.Sort([](const FTarget& A, const FTarget& B){ return A.Slot < B.Slot; });
+
+		TArray<FVector2D> TargetPos;
+		TargetPos.Reserve(Targets.Num());
+		for (const FTarget& T : Targets) TargetPos.Add(T.Pos);
+
+		const bool   bChaos  = Ctx.bUseChaosPhysics;
+		const double DriveF  = (double)Constants::EnemyDriveForce;
+		// No-Chaos: velocity delta this tick = acceleration * dt = (F / m) * dt.
+		const double AccelDt = ((double)Constants::EnemyDriveForce / (double)Constants::EnemyMass) * (double)Constants::SimDt;
 
 		FMassEntityQuery Q(Ctx.MassEntityManager);
 		Q.AddTagRequirement<FUvHSEnemyTag>(EMassFragmentPresence::All);
 		Q.AddRequirement<FUvHSEnemyPositionFragment>(EMassFragmentAccess::ReadOnly);
-		Q.AddRequirement<FUvHSEnemyChaosBodyFragment>(EMassFragmentAccess::ReadWrite);
-
-		const double DriveF = (double)Constants::EnemyDriveForce;
-
-		if (Targets.Num() == 0) return;  // No active targets → no force this tick (linear damping bleeds velocity).
-		Targets.Sort([](const FTarget& A, const FTarget& B){ return A.Slot < B.Slot; });
+		if (bChaos) Q.AddRequirement<FUvHSEnemyChaosBodyFragment>(EMassFragmentAccess::ReadWrite);
+		else        Q.AddRequirement<FUvHSEnemyVelocityFragment>(EMassFragmentAccess::ReadWrite);
 
 		FMassExecutionContext ExecContext(*Ctx.MassEntityManager);
 		Q.ForEachEntityChunk(ExecContext,
-			[&Targets, DriveF](FMassExecutionContext& ExecCtx)
+			[&TargetPos, bChaos, DriveF, AccelDt](FMassExecutionContext& ExecCtx)
 		{
 			const int32 N = ExecCtx.GetNumEntities();
 			const auto Positions = ExecCtx.GetFragmentView<FUvHSEnemyPositionFragment>();
-			const auto Bodies    = ExecCtx.GetFragmentView<FUvHSEnemyChaosBodyFragment>();
+			if (bChaos)
+			{
+				const auto Bodies = ExecCtx.GetFragmentView<FUvHSEnemyChaosBodyFragment>();
+				for (int32 i = 0; i < N; ++i)
+				{
+					const FVector2D Dir = NearestSeekDir(Positions[i].Position, TargetPos);
+					if (Dir.IsNearlyZero()) continue;
+					if (AUvHSEnemyBody* Actor = Bodies[i].Actor.Get())
+					{
+						Actor->AddPlanarForce(Dir * DriveF);
+					}
+				}
+			}
+			else
+			{
+				const auto Velocities = ExecCtx.GetMutableFragmentView<FUvHSEnemyVelocityFragment>();
+				for (int32 i = 0; i < N; ++i)
+				{
+					const FVector2D Dir = NearestSeekDir(Positions[i].Position, TargetPos);
+					if (Dir.IsNearlyZero()) continue;
+					Velocities[i].Velocity += Dir * AccelDt;
+				}
+			}
+		});
+	}
+
+	// ---------- Step 5b: EnemyIntegrate (no-Chaos backend only) ----------
+	//
+	// Hand-rolled stand-in for the Chaos physics tick when bUseChaosPhysics is
+	// false: applies linear damping and integrates position from velocity for every
+	// enemy each tick (even with no target, so residual velocity keeps bleeding —
+	// matching a damped rigid body). Contact-free and deterministic. The runner
+	// only calls this in the no-Chaos path.
+	void EnemyIntegrate(FSimContext& Ctx)
+	{
+		if (!Ctx.MassEntityManager.IsValid()) return;
+
+		const double Dt         = (double)Constants::SimDt;
+		const double DampFactor = 1.0 / (1.0 + (double)Constants::EnemyLinearDamping * Dt);
+
+		FMassEntityQuery Q(Ctx.MassEntityManager);
+		Q.AddTagRequirement<FUvHSEnemyTag>(EMassFragmentPresence::All);
+		Q.AddRequirement<FUvHSEnemyPositionFragment>(EMassFragmentAccess::ReadWrite);
+		Q.AddRequirement<FUvHSEnemyVelocityFragment>(EMassFragmentAccess::ReadWrite);
+
+		FMassExecutionContext ExecContext(*Ctx.MassEntityManager);
+		Q.ForEachEntityChunk(ExecContext,
+			[DampFactor, Dt](FMassExecutionContext& ExecCtx)
+		{
+			const int32 N = ExecCtx.GetNumEntities();
+			auto Positions  = ExecCtx.GetMutableFragmentView<FUvHSEnemyPositionFragment>();
+			auto Velocities = ExecCtx.GetMutableFragmentView<FUvHSEnemyVelocityFragment>();
 			for (int32 i = 0; i < N; ++i)
 			{
-				const FVector2D EPos = Positions[i].Position;
-				double BestSq = TNumericLimits<double>::Max();
-				FVector2D Best = Targets[0].Pos;
-				for (const FTarget& T : Targets)
-				{
-					const double Sq = (T.Pos - EPos).SquaredLength();
-					if (Sq < BestSq) { BestSq = Sq; Best = T.Pos; }
-				}
-				FVector2D Dir = Best - EPos;
-				const double Len = FMath::Sqrt(BestSq);
-				if (Len <= 1e-4) continue;
-				Dir /= Len;
-				if (AUvHSEnemyBody* Actor = Bodies[i].Actor.Get())
-				{
-					Actor->AddPlanarForce(Dir * DriveF);
-				}
+				const FVector2D V = Velocities[i].Velocity * DampFactor;
+				Velocities[i].Velocity  = V;
+				Positions[i].Position  += V * Dt;
 			}
 		});
 	}

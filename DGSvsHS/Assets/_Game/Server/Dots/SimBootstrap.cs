@@ -12,6 +12,9 @@ namespace DGSvsHS.Server.Dots
 
         public static Entity CreateOrResetGlobals(EntityManager em, ulong seed)
         {
+            int cellsPerSide = Constants.GridHalfCells * 2;
+            int cellCount = cellsPerSide * cellsPerSide;
+
             Entity globals;
             var existing = em.CreateEntityQuery(ComponentType.ReadOnly<SimGlobalsTag>());
             if (existing.CalculateEntityCount() > 0)
@@ -26,6 +29,8 @@ namespace DGSvsHS.Server.Dots
                 em.SetComponentData(globals, meta);
                 var headers = em.GetBuffer<RewindFrameHeader>(globals);
                 for (int i = 0; i < headers.Length; i++) headers[i] = new RewindFrameHeader { Tick = 0, Count = 0 };
+                var resetOffsets = em.GetBuffer<RewindCellOffset>(globals);
+                for (int i = 0; i < resetOffsets.Length; i++) resetOffsets[i] = new RewindCellOffset { Value = 0 };
             }
             else
             {
@@ -42,18 +47,31 @@ namespace DGSvsHS.Server.Dots
                     typeof(RewindFrameHeader),
                     typeof(RewindId),
                     typeof(RewindPos),
+                    typeof(RewindCellOffset),
                     typeof(GodModeFlag));
                 globals = em.CreateEntity(arch);
                 em.SetName(globals, "SimGlobals");
 
                 int stride = Constants.MaxEnemies;
                 int slots = Constants.SnapshotHistoryTicks;
-                em.SetComponentData(globals, new RewindRingMeta { Head = 0, Count = 0, Stride = stride });
+                em.SetComponentData(globals, new RewindRingMeta
+                {
+                    Head = 0,
+                    Count = 0,
+                    Stride = stride,
+                    CellsPerSide = cellsPerSide,
+                    CellCount = cellCount,
+                });
                 var headers = em.GetBuffer<RewindFrameHeader>(globals);
                 headers.ResizeUninitialized(slots);
                 for (int i = 0; i < slots; i++) headers[i] = new RewindFrameHeader { Tick = 0, Count = 0 };
                 em.GetBuffer<RewindId>(globals).ResizeUninitialized(slots * stride);
                 em.GetBuffer<RewindPos>(globals).ResizeUninitialized(slots * stride);
+                // (CellCount + 1) so a sentinel slot exists per cell, letting the
+                // resolver read the cell's [start, end) without a branch.
+                var offsets = em.GetBuffer<RewindCellOffset>(globals);
+                offsets.ResizeUninitialized(slots * (cellCount + 1));
+                for (int i = 0; i < offsets.Length; i++) offsets[i] = new RewindCellOffset { Value = 0 };
             }
 
             em.SetComponentData(globals, new WorldClock { Tick = 0 });

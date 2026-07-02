@@ -27,9 +27,32 @@ Source/ThirdParty/MsQuic/
     ├── Win64/
     │   ├── msquic.lib        (import library for linking)
     │   └── msquic.dll        (runtime — auto-copied next to the .exe by Build.cs)
-    └── Linux/
-        └── libmsquic.so.2    (runtime + linkable; rename if release ships as
-                               libmsquic.so.2.5.7 — the SONAME is .so.2)
+    ├── Linux/
+    │   └── libmsquic.so.2    (x86_64 runtime; rename if release ships as
+    │                          libmsquic.so.2.5.7 — the SONAME is .so.2)
+    └── LinuxArm64/
+        └── libmsquic.so.2    (aarch64 runtime; same naming rule. From the
+                               msquic_linux_arm64_openssl release tarball.)
+```
+
+## Picking the right msquic release for LinuxArm64
+
+The official msquic GitHub releases ship an aarch64 build:
+
+```
+msquic_linux_arm64_openssl_<version>.tar.gz
+```
+
+Inside, the runtime `libmsquic.so.2` lives at `bin/libmsquic.so.2` (or
+`lib/libmsquic.so.2` depending on version). Drop it as
+`lib/LinuxArm64/libmsquic.so.2`. One-liner:
+
+```bash
+V=2.5.7    # match the Win64 / Linux release you already vendored
+curl -fsSL "https://github.com/microsoft/msquic/releases/download/v${V}/msquic_linux_arm64_openssl_${V}.tar.gz" \
+  | tar -xz -C /tmp/msquic-arm
+cp /tmp/msquic-arm/bin/libmsquic.so.2 Source/ThirdParty/MsQuic/lib/LinuxArm64/
+file Source/ThirdParty/MsQuic/lib/LinuxArm64/libmsquic.so.2  # expect: ELF aarch64
 ```
 
 ## Verify the link

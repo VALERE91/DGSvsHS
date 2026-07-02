@@ -130,7 +130,7 @@ log "launching dgsvshs-bevy ${launch_args}"
 log "Output -> /tmp/rust.log (tail -f /tmp/rust.log from shell)"
 
 cd /opt/app
-TRACY_NO_INVARIANT_CHECK=1 ./dgsvshs-bevy ${launch_args} > /tmp/rust.log 2>&1 &
+./dgsvshs-bevy ${launch_args} > /tmp/rust.log 2>&1 &
 BEVY_PID=\$!
 log "Bevy server launched as PID \$BEVY_PID"
 BOTTOMEOF

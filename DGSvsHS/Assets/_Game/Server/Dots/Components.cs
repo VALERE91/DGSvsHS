@@ -138,14 +138,16 @@ namespace DGSvsHS.Server.Dots
         public int Head;
         public int Count;
         public int Stride;
+        public int CellsPerSide;
+        public int CellCount;
     }
-    
+
     public struct RewindFrameHeader : IBufferElementData
     {
         public uint Tick;
         public int Count;
     }
-    
+
     public struct RewindId : IBufferElementData
     {
         public ushort Value;
@@ -154,6 +156,16 @@ namespace DGSvsHS.Server.Dots
     public struct RewindPos : IBufferElementData
     {
         public float2 Value;
+    }
+
+    // CSR-style cell offsets per ring slot, mirrors Bevy RewindFrame.cells.
+    // Per slot the layout is Offset[0..CellCount] with Offset[c+1] - Offset[c] =
+    // number of enemies bucketed into cell c, and entries in [Offset[c]..Offset[c+1])
+    // of Ids/Positions belong to that cell. Slot s occupies indices
+    // [s*(CellCount+1) .. (s+1)*(CellCount+1)).
+    public struct RewindCellOffset : IBufferElementData
+    {
+        public int Value;
     }
 }
 #endif

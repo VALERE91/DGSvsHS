@@ -177,7 +177,7 @@ log "ip guardian PID \$! — re-asserts ${STATIC_IP} if anything wipes it"
 
 cd /opt/app
 # Server output to log file so it doesn't interleave with the shell on /dev/console.
-TRACY_NO_INVARIANT_CHECK=1 ./dgsvshs-bevy ${launch_args} > /tmp/rust.log 2>&1 &
+./dgsvshs-bevy ${launch_args} > /tmp/rust.log 2>&1 &
 BEVY_PID=\$!
 log "Bevy server launched as PID \$BEVY_PID"
 

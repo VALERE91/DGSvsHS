@@ -110,6 +110,21 @@ namespace UnrealvsHS::Server
 		bool                  bGodMode = false;
 		uint64                Seed = 0;
 
+		// Enemy physics backend. true = Chaos rigid bodies (AUvHSEnemyBody actors).
+		// false = hand-rolled force integration in Sim::EnemySeek + EnemyIntegrate,
+		// no Chaos bodies spawned at all (zero contact/solver cost). Set from the
+		// server GameMode's bUseChaosPhysics before the sim runs.
+		bool                  bUseChaosPhysics = false;
+
+#if !UE_BUILD_SHIPPING
+		// Editor/dev loopback smoke-test: when true, spawned players stand still and
+		// sweep-fire a full circle every tick so rounds auto-advance with no network
+		// client. Set from SimulatedClients > 0 in the server GameMode. Compiled out
+		// of Shipping entirely — Shipping serves real clients only.
+		bool                  bSimulatedInput   = false;
+		float                 SimulatedAimAngle = 0.0f;
+#endif
+
 		EServerLifecycle      State = EServerLifecycle::Booting;
 
 		TArray<FPlayerState>  Players;

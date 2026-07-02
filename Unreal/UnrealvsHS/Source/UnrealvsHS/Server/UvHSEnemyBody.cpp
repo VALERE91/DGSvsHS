@@ -11,11 +11,19 @@ AUvHSEnemyBody::AUvHSEnemyBody()
 	RootComponent = Sphere;
 	
 	Sphere->InitSphereRadius(UnrealvsHS::Constants::EnemyRadius * UnrealvsHS::Client::FUvHSWorldRenderer::UnrealsPerMeter);
+	// Enemies still SIMULATE under Chaos (seek force + linear damping integrate the
+	// body), but they generate NO collision contacts: response is Ignore on every
+	// channel, so enemies pass through each other and the player with zero solver
+	// cost. Nothing gameplay-side needs Chaos contacts — player disable/kill is a
+	// manual distance check in Sim::PlayerEnemyContact (gated by GodMode) and beam
+	// kills are manual segment-vs-circle in RewindResolve. This collapses the
+	// STAT_Evolution_Gather / SolveConstraints cost that dominated the frame at high
+	// enemy counts (the round-10 center pile-up).
 	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Sphere->SetCollisionObjectType(ECC_Pawn);
-	Sphere->SetCollisionResponseToAllChannels(ECR_Block);
+	Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Sphere->SetGenerateOverlapEvents(false);
-	
+
 	Sphere->BodyInstance.bSimulatePhysics  = true;
 	Sphere->BodyInstance.bEnableGravity    = false;
 	Sphere->BodyInstance.bOverrideMass     = true;

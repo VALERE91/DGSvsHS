@@ -19,6 +19,8 @@ def main():
     parser.add_argument("--password", default=os.getenv("PROXMOX_PASSWORD"), help="SSH Password")
 
     parser.add_argument("--hz", type=int, default=20, help="Sampling frequency")
+    parser.add_argument("--stats-log", action="store_true",
+                        help="Fetch /tmp/stats.log from VM serial console and merge inner_fps/outer_fps/to_spawn/... into each sample (default off)")
     args = parser.parse_args()
 
     if not args.password:
@@ -31,6 +33,7 @@ import time, json, sys, os, subprocess, select, re
 vmid = "{args.vmid}"
 vm_type = "{args.type}"
 interval = 1.0 / {args.hz}
+stats_log_enabled = {args.stats_log}
 
 if vm_type == "qemu":
     cgroup_dir = f"/sys/fs/cgroup/qemu.slice/{{vmid}}.scope"
@@ -41,12 +44,16 @@ else:
 
 # --- Serial console reader (qemu/VM only) ---
 # Each microvm /init spawns an interactive sh on /dev/console; we attach to the
-# QEMU serial socket via socat (same mechanism `qm terminal` uses) and send
-# `cat /tmp/stats.log` per sample, capturing the JSON line each server writes
-# at 20 Hz. LXC doesn't have a serial socket so the merge is skipped there.
+# QEMU serial socket via socat (same mechanism `qm terminal` uses) and pump
+# `cat /tmp/stats.log` through it asynchronously. Each sample non-blockingly
+# drains whatever the shell has produced since last call, caches the latest
+# JSON, and queues another cat only once the previous one has been answered
+# (or after 5*interval if it got lost). Prevents the recorder from going dead
+# when a CPU-saturated VM stalls one response — we just use the cached fields
+# until a fresh one lands. LXC has no serial socket; merge is skipped there.
 serial_sock = f"/var/run/qemu-server/{{vmid}}.serial0"
 console_proc = None
-if vm_type == "qemu" and os.path.exists(serial_sock):
+if stats_log_enabled and vm_type == "qemu" and os.path.exists(serial_sock):
     try:
         console_proc = subprocess.Popen(
             ["socat", "-", f"UNIX-CONNECT:{{serial_sock}}"],
@@ -68,26 +75,51 @@ if vm_type == "qemu" and os.path.exists(serial_sock):
         console_proc = None
 
 _json_re = re.compile(rb"\\{{\\s*\\\"t\\\".*?\\}}")
+_last_stats = None
+_last_cat_sent = 0.0
+_last_response_at = 0.0
 
 def grab_server_stats():
-    if console_proc is None: return None
+    global _last_stats, _last_cat_sent, _last_response_at
+    if console_proc is None: return _last_stats
     try:
-        console_proc.stdin.write(b"cat /tmp/stats.log\\n")
-        console_proc.stdin.flush()
-        deadline = time.time() + (interval * 0.5)
+        # Non-blocking drain — take whatever the shell has produced since the
+        # last call. Don't wait for THIS iteration's cat to come back; if the
+        # VM is CPU-saturated the response may land 2-3 samples later, and
+        # that's fine because we keep returning the cached stats meanwhile.
         buf = b""
-        while time.time() < deadline:
-            r, _, _ = select.select([console_proc.stdout], [], [], 0.01)
-            if r:
-                chunk = console_proc.stdout.read(4096)
-                if chunk: buf += chunk
+        while True:
+            r, _, _ = select.select([console_proc.stdout], [], [], 0)
+            if not r: break
+            chunk = console_proc.stdout.read(65536)
+            if not chunk: break
+            buf += chunk
+        now = time.time()
         m = None
         for hit in _json_re.finditer(buf):
             m = hit
-        if m is None: return None
-        return json.loads(m.group(0).decode("utf-8", errors="ignore"))
+        if m is not None:
+            try:
+                _last_stats = json.loads(m.group(0).decode("utf-8", errors="ignore"))
+                _last_response_at = now
+            except Exception:
+                pass
+        # One-in-flight: only queue another cat once the previous one has been
+        # answered, or after 5*interval if it got lost. Without this the shell's
+        # command queue grows faster than it can drain under high CPU and the
+        # responses we DO get end up stale — same symptom as "stays dead".
+        responded = _last_response_at > _last_cat_sent
+        timed_out = (now - _last_cat_sent) > 5.0 * interval
+        if _last_cat_sent == 0.0 or responded or timed_out:
+            try:
+                console_proc.stdin.write(b"cat /tmp/stats.log\\n")
+                console_proc.stdin.flush()
+                _last_cat_sent = now
+            except Exception:
+                pass
+        return _last_stats
     except Exception:
-        return None
+        return _last_stats
 
 def read_int(p):
     try:
@@ -124,10 +156,11 @@ while True:
         tx_r = (cur_tx - last_tx) / dt
 
         sample = {{"t": t, "c": cpu_p, "m": mem, "rx": rx_r, "tx": tx_r}}
-        srv = grab_server_stats()
-        if srv:
-            for k in ("inner_fps", "outer_fps", "to_spawn", "spawned", "alive", "tick", "state"):
-                if k in srv: sample[k] = srv[k]
+        if stats_log_enabled:
+            srv = grab_server_stats()
+            if srv:
+                for k in ("inner_fps", "outer_fps", "to_spawn", "spawned", "alive", "tick", "state"):
+                    if k in srv: sample[k] = srv[k]
 
         print(json.dumps(sample))
         sys.stdout.flush()

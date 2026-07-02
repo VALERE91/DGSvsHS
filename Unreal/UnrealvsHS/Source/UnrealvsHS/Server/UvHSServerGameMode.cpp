@@ -24,6 +24,7 @@ void AUvHSServerGameMode::ParseCommandLineOverrides()
 	int32 SimN;     if (FParse::Value(Cmd, TEXT("SimulatedClients="), SimN)) SimulatedClients = FMath::Clamp(SimN, 0, Constants::MaxPlayers);
 	int32 SeedArg;  if (FParse::Value(Cmd, TEXT("Seed="), SeedArg))          RngSeed = SeedArg;
 	bool  bGod;     if (FParse::Bool(Cmd, TEXT("GodMode="), bGod))           bGodMode = bGod;
+	bool  bChaos;   if (FParse::Bool(Cmd, TEXT("UseChaos="), bChaos))        bUseChaosPhysics = bChaos;
 }
 
 void AUvHSServerGameMode::BeginPlay()
@@ -31,11 +32,22 @@ void AUvHSServerGameMode::BeginPlay()
 	Super::BeginPlay();
 	ParseCommandLineOverrides();
 
+#if WITH_EDITOR
+	// Zero-config PIE smoke test: with no real client (no QUIC on Windows), force
+	// one simulated player that stands still and sweep-fires so rounds auto-run.
+	if (bAutoSmokeTestInEditor && SimulatedClients <= 0)
+	{
+		SimulatedClients = 1;
+		UE_LOG(LogTemp, Display, TEXT("[UvHSServer] editor smoke test: forcing SimulatedClients=1 (sweep-fire bot)"));
+	}
+#endif
+
 	if (GEngine) GEngine->SetMaxFPS(125.0f);
 
 	const uint64 Seed = ((uint64)(uint32)RngSeed) | (((uint64)(uint32)RngSeed) << 32);
 	Ctx.Initialize(Seed, bGodMode);
-	
+	Ctx.bUseChaosPhysics = bUseChaosPhysics;   // select enemy physics backend before any enemy spawns
+
 	if (UMassEntitySubsystem* MassSub = GetWorld()->GetSubsystem<UMassEntitySubsystem>())
 	{
 		Ctx.AttachMass(MassSub->GetMutableEntityManager().AsShared());
@@ -53,9 +65,14 @@ void AUvHSServerGameMode::BeginPlay()
 	UE_LOG(LogTemp, Display, TEXT("[UvHSServer] boot port=%d seed=0x%llX godMode=%d simClients=%d sim=%dms (%.1f Hz)"),
 		ListenPort, Seed, bGodMode ? 1 : 0, SimulatedClients,
 		Constants::SimTickMs, Constants::TicksPerSecond);
+	UE_LOG(LogTemp, Display, TEXT("[UvHSServer] enemy physics backend: %s"),
+		bUseChaosPhysics ? TEXT("Chaos rigid bodies") : TEXT("hand-rolled force integration (no Chaos)"));
 
 	if (SimulatedClients > 0)
 	{
+#if !UE_BUILD_SHIPPING
+		Ctx.bSimulatedInput = true;   // sweep-fire smoke test (dev/editor only)
+#endif
 		for (uint8 i = 0; i < SimulatedClients; ++i) Ctx.SpawnPlayer(i);
 		Ctx.Round.Phase           = Wire::ERoundPhase::InterRound;
 		Ctx.Round.Round           = 0;

@@ -12,11 +12,19 @@ namespace UnrealvsHS::Server
 		const double T0 = FPlatformTime::Seconds();
 		
 		Sim::TickAdvance(Ctx);
-		Sim::SyncChaosToFragments(Ctx);
+		// Chaos backend reads last tick's rigid-body results back into fragments;
+		// no-Chaos backend has no bodies to sync (fragments are the source of truth).
+		if (Ctx.bUseChaosPhysics) Sim::SyncChaosToFragments(Ctx);
 		Sim::RoundDirector(Ctx);
+#if !UE_BUILD_SHIPPING
+		Sim::SimulatedClientInput(Ctx);   // dev/editor smoke test; compiled out of Shipping
+#endif
 		Sim::PlayerInput(Ctx);
 		Sim::RewindResolve(Ctx);
 		Sim::EnemySeek(Ctx);
+		// No-Chaos backend integrates velocity/position itself (Chaos does it in the
+		// world physics tick for the rigid-body path).
+		if (!Ctx.bUseChaosPhysics) Sim::EnemyIntegrate(Ctx);
 		Sim::PlayerEnemyContact(Ctx);
 		Sim::RewindRecord(Ctx);
 		Sim::CaptureSnapshotFull(Ctx, LastSnapshot);

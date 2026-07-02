@@ -31,7 +31,8 @@ if [ -z "$BUILD_DIR" ]; then
     # Look for the most recent staged Unreal server tree containing an x86_64 binary.
     # Heuristic: a regular file whose path ends in /Binaries/Linux/<X>Server
     # (UE convention — server binary has no extension; .debug/.sym don't match).
-    BIN_PATH=$(find ../../Build -maxdepth 8 -type f -path "*/Binaries/Linux/*Server" 2>/dev/null \
+    BIN_PATH=$(find ../../Build -maxdepth 10 -type f \
+               -regex '.*/Binaries/Linux/[^/]*Server\(-Linux-\(Shipping\|Test\|Debug\)\)?' 2>/dev/null \
                | sort | tail -1)
     if [ -n "$BIN_PATH" ]; then
         BUILD_DIR=$(cd "$(dirname "$BIN_PATH")/../../.." && pwd)
@@ -66,11 +67,15 @@ LAUNCHER_NAME=$(basename "$LAUNCHER")               # UnrealvsHSServer.sh
 PROJECT_BINARY="${LAUNCHER_NAME%.sh}"               # UnrealvsHSServer
 PROJECT_NAME="${PROJECT_BINARY%Server}"             # UnrealvsHS
 
-BIN_FULL_PATH="$BUILD_DIR/$PROJECT_NAME/Binaries/Linux/$PROJECT_BINARY"
-if [ ! -f "$BIN_FULL_PATH" ]; then
-    echo "ERROR: expected server binary not found at $BIN_FULL_PATH" >&2
+# On-disk binary may be suffixed for Shipping/Test/Debug configs, e.g.
+# UnrealvsHSServer-Linux-Shipping. Find it instead of assuming an exact match.
+BIN_FULL_PATH=$(find "$BUILD_DIR/$PROJECT_NAME/Binaries/Linux" -maxdepth 1 -type f \
+                -regex ".*/${PROJECT_BINARY}\(-Linux-\(Shipping\|Test\|Debug\)\)?" 2>/dev/null | head -1)
+if [ -z "$BIN_FULL_PATH" ]; then
+    echo "ERROR: expected server binary not found under $BUILD_DIR/$PROJECT_NAME/Binaries/Linux/" >&2
     exit 1
 fi
+PROJECT_BINARY=$(basename "$BIN_FULL_PATH")         # real on-disk name, suffix included
 
 echo "==> Using Unreal staged build at: $BUILD_DIR"
 echo "==> Project:                     $PROJECT_NAME"

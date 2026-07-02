@@ -106,16 +106,22 @@ namespace UnrealvsHS::Server
 		VelF.Velocity = FVector2D::ZeroVector;
 		FrcF.Force    = FVector2D::ZeroVector;
 		
-		if (UWorld* W = World.Get())
+		// Only spawn a Chaos rigid body when the Chaos backend is active. In the
+		// hand-rolled path enemies live purely as Mass fragments (Pos/Vel), and
+		// Sim::EnemySeek + EnemyIntegrate move them — no actor, no physics scene cost.
+		if (bUseChaosPhysics)
 		{
-			const float U = UnrealvsHS::Client::FUvHSWorldRenderer::UnrealsPerMeter;
-			const float Z = UnrealvsHS::Client::FUvHSWorldRenderer::EntityZ;
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			Params.ObjectFlags |= RF_Transient;
-			const FVector StartLoc((double)Pos.X * U, (double)Pos.Y * U, Z);
-			AUvHSEnemyBody* Actor = W->SpawnActor<AUvHSEnemyBody>(StartLoc, FRotator::ZeroRotator, Params);
-			BodyF.Actor = Actor;
+			if (UWorld* W = World.Get())
+			{
+				const float U = UnrealvsHS::Client::FUvHSWorldRenderer::UnrealsPerMeter;
+				const float Z = UnrealvsHS::Client::FUvHSWorldRenderer::EntityZ;
+				FActorSpawnParameters Params;
+				Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				Params.ObjectFlags |= RF_Transient;
+				const FVector StartLoc((double)Pos.X * U, (double)Pos.Y * U, Z);
+				AUvHSEnemyBody* Actor = W->SpawnActor<AUvHSEnemyBody>(StartLoc, FRotator::ZeroRotator, Params);
+				BodyF.Actor = Actor;
+			}
 		}
 		++CachedEnemyCount;
 	}

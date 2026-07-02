@@ -46,21 +46,39 @@ public class UvHSMsQuic : ModuleRules
 			}
 			PublicDelayLoadDLLs.Add("msquic.dll");
 		}
-		else if (Target.Platform == UnrealTargetPlatform.Linux)
+		else if (Target.Platform == UnrealTargetPlatform.Linux ||
+		         Target.Platform == UnrealTargetPlatform.LinuxArm64)
 		{
+			// Pick the right binary directory per architecture. UE 5 ships
+			// LinuxArm64 as a first-class target for ARM-based microvms and
+			// Ampere-class hardware (Hetzner ARM, Apple Silicon QEMU+hvf).
+			//   lib/Linux/        → x86_64 glibc msquic (official openssl release)
+			//   lib/LinuxArm64/   → aarch64 glibc msquic (official openssl release)
+			// Both must export the same SONAME `libmsquic.so.2` so the runtime
+			// loader resolves the dlopen call the same way.
+			string LinuxSubDir = (Target.Platform == UnrealTargetPlatform.LinuxArm64) ? "LinuxArm64" : "Linux";
+			string ArchLibDir  = Path.Combine(LibDir, LinuxSubDir);
+			string LinSoVer    = Path.Combine(ArchLibDir, "libmsquic.so.2");
+
+			if (!File.Exists(LinSoVer))
+			{
+				throw new BuildException(
+					"MsQuic: missing " + LinSoVer + ".\n" +
+					"        Download the matching aarch64 msquic openssl release from\n" +
+					"        https://github.com/microsoft/msquic/releases (the\n" +
+					"        msquic_linux_aarch64_openssl tarball) and drop the\n" +
+					"        libmsquic.so.2 file into Source/ThirdParty/MsQuic/lib/LinuxArm64/.\n" +
+					"        See README.md for details.");
+			}
+
 			// UBT's Linux toolchain converts a `.so.<N>` path into
 			// `-l<basename-no-libprefix-no-version>` which lld can't resolve
 			// (it would need `-l:libmsquic.so.2` to honor the literal name).
-			// Workaround: link against an unversioned `libmsquic.so` copy of
-			// the same file. The SONAME embedded inside the .so still points
-			// to `libmsquic.so.2`, so the runtime loader resolves against
-			// the versioned copy we ship via RuntimeDependencies.
-			string LinSoVer = Path.Combine(LibDir, "Linux", "libmsquic.so.2");
+			// Workaround: ship the versioned copy via RuntimeDependencies and
+			// dlopen it at runtime (RTLD_DEEPBIND) — avoids the link-time
+			// resolve and also dodges the OpenSSL 1.1 symbol collision with
+			// Unreal's statically linked OpenSSL.
 			RuntimeDependencies.Add("$(BinaryOutputDir)/libmsquic.so.2", LinSoVer);
-			// Removed PublicAdditionalLibraries.Add(LinSo) to prevent dynamic loader
-			// from binding MsQuic globally before main(), which causes OpenSSL 
-			// symbol collisions with Unreal's statically linked OpenSSL 1.1.
-			// We now load it manually via dlopen with RTLD_DEEPBIND.
 		}
 		else
 		{
