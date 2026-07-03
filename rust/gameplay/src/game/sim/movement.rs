@@ -119,7 +119,16 @@ pub fn player_input(
 
 pub fn enemy_seek(
     players: Query<(&PlayerSlot, &Pos2D, &Alive, &DisableTimer), With<Player>>,
-    mut enemies: Query<(&Pos2D, Forces), With<Enemy>>,
+    // `Without<Sleeping>` aligns Avian's crowd behaviour with the DOTS/Unity.Physics
+    // leg. In a 7x-oversubscribed jam the packed core has ~zero velocity; Unity's
+    // solver deactivates those bodies (islands drop out of the solve) while ours
+    // used to keep the entire jam awake by applying drive every tick. Gating the
+    // drive on non-sleeping enemies lets Avian's (default-on) sleeping put the dead
+    // core to sleep. The moving fringe stays awake and wakes neighbours on contact
+    // as the jam shifts, so seek behaviour is preserved. Kills/disable go through
+    // the hand-rolled grid, independent of physics sleep, so sleeping enemies are
+    // still resolved correctly.
+    mut enemies: Query<(&Pos2D, &mut LinearVelocity), (With<Enemy>, Without<Sleeping>)>,
 ) {
     // Build target list in slot order so the (vanishingly rare) exact-distance
     // tie-break is deterministic across runs/builds.
@@ -134,7 +143,7 @@ pub fn enemy_seek(
     if targets.is_empty() {
         return;
     }
-    for (pos, mut forces) in enemies.iter_mut() {
+    for (pos, mut lv) in enemies.iter_mut() {
         let p = pos_vec(pos);
         let mut best = targets[0];
         let mut best_sq = f32::MAX;
@@ -152,7 +161,13 @@ pub fn enemy_seek(
         } else {
             continue;
         }
-        forces.apply_force(dir * ENEMY_DRIVE_FORCE);
+        // Per-tick linear impulse, mirroring the DOTS EnemySeekSystem exactly:
+        // ImpulseMagnitude = EnemyDriveForce * SimDt, applied as Δv = impulse / mass
+        // (PhysicsVelocity.ApplyLinearImpulse). ENEMY_MASS = 1 so steady-state speed
+        // stays EnemyDriveForce / EnemyLinearDamping = EnemySpeed. Unlike the old
+        // continuous `Forces::apply_force`, a direct velocity change leaves no
+        // persistent ExternalForce to keep jammed bodies awake, so they can sleep.
+        lv.0 += dir * (ENEMY_DRIVE_FORCE * SIM_DT / ENEMY_MASS);
     }
 }
 
