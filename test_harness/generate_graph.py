@@ -11,7 +11,17 @@ OUTPUT_DIR = "graphs"
 
 # Fenêtre de lissage pour la moyenne glissante. 
 # À 20Hz : 10 = 0.5s de lissage, 20 = 1s de lissage, 40 = 2s de lissage.
-SMOOTHING_WINDOW = 10 
+SMOOTHING_WINDOW = 10
+
+# Y-axis outlier clipping. Transient startup spikes (e.g. Bevy's first-frame
+# ~46% CPU blip) otherwise squash the whole chart into the bottom. If the true
+# max exceeds the "robust top" (max across series of their Nth percentile) by
+# YLIM_OUTLIER_FACTOR, cap the y-axis there (+ headroom) so the spike runs off
+# the top instead of compressing everything. Normal charts (no outlier) keep
+# matplotlib's auto-scaling untouched.
+YLIM_PERCENTILE     = 99.0
+YLIM_OUTLIER_FACTOR = 1.3
+YLIM_HEADROOM       = 1.15
 
 # Display configurations
 METRICS = {
@@ -83,25 +93,54 @@ def smooth_data(y, window_size):
         out = np.where(den > 0, num / den, np.nan)
     return out
 
+def robust_ylim_top(series_list):
+    """Y-axis top that hides narrow transient spikes but keeps sustained peaks.
+
+    Takes the max across series of each series' YLIM_PERCENTILE percentile (a
+    sustained peak sits at/below its own p99; a narrow spike sits well above it).
+    Returns that value * headroom ONLY if the real max exceeds it by
+    YLIM_OUTLIER_FACTOR — otherwise None, meaning 'no outlier, auto-scale'."""
+    pctls, maxes = [], []
+    for s in series_list:
+        arr = np.asarray(s, dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            continue
+        pctls.append(np.percentile(arr, YLIM_PERCENTILE))
+        maxes.append(arr.max())
+    if not pctls:
+        return None
+    robust = max(pctls)
+    if robust > 0 and max(maxes) > robust * YLIM_OUTLIER_FACTOR:
+        return robust * YLIM_HEADROOM
+    return None
+
 def plot_graph(x_data_dict, y_data_dict, title, ylabel, filename):
     """Utility to render and save a single SVG."""
     plt.figure(figsize=(12, 6))
     
     has_data = False
+    smoothed_series = []
     for flavor, y_vals in y_data_dict.items():
         if y_vals is not None and len(y_vals) > 0:
             x_vals = x_data_dict[flavor]
             color = FLAVOR_COLORS.get(flavor, '#333333')
-            
+
             # Application du lissage avant de tracer
             y_smoothed = smooth_data(y_vals, SMOOTHING_WINDOW)
-            
+
             plt.plot(x_vals, y_smoothed, label=flavor.upper(), color=color, linewidth=1.5, alpha=0.85)
+            smoothed_series.append(y_smoothed)
             has_data = True
-            
+
     if not has_data:
         plt.close()
         return
+
+    # Clip the y-axis if a transient spike dwarfs the sustained signal.
+    top = robust_ylim_top(smoothed_series)
+    if top is not None:
+        plt.ylim(top=top)
 
     plt.title(title, fontsize=14, fontweight='bold')
     plt.xlabel("Elapsed Time (Seconds)", fontsize=11)
@@ -128,15 +167,18 @@ def plot_cpu_vs_fps(x_dict, cpu_dict, fps_dict, title, filename, fps_label='Sim 
     fig, ax_cpu = plt.subplots(figsize=(12, 6))
     ax_fps = ax_cpu.twinx()
 
+    cpu_smoothed = []
     for flavor, x_vals in x_dict.items():
         cpu_color = FLAVOR_COLORS.get(flavor, '#333333')
         fps_color = FLAVOR_FPS_COLORS.get(flavor, '#777777')
         cpu_vals = cpu_dict.get(flavor)
         fps_vals = fps_dict.get(flavor)
         if cpu_vals is not None and len(cpu_vals) > 0:
-            ax_cpu.plot(x_vals, smooth_data(cpu_vals, SMOOTHING_WINDOW),
+            cpu_s = smooth_data(cpu_vals, SMOOTHING_WINDOW)
+            ax_cpu.plot(x_vals, cpu_s,
                         label=f"{flavor.upper()} CPU", color=cpu_color,
                         linestyle='-', linewidth=1.5, alpha=0.85)
+            cpu_smoothed.append(cpu_s)
         if fps_vals is not None and len(fps_vals) > 0:
             ax_fps.plot(x_vals, smooth_data(fps_vals, SMOOTHING_WINDOW),
                         label=f"{flavor.upper()} {fps_label}", color=fps_color,
@@ -147,6 +189,11 @@ def plot_cpu_vs_fps(x_dict, cpu_dict, fps_dict, title, filename, fps_label='Sim 
     ax_cpu.set_ylabel("CPU Utilization (%)", fontsize=11)
     ax_fps.set_ylabel(f"{fps_label} (Hz)", fontsize=11)
     ax_cpu.grid(True, linestyle=':', alpha=0.7)
+
+    # Same transient-spike clipping as plot_graph, on the CPU axis only.
+    top = robust_ylim_top(cpu_smoothed)
+    if top is not None:
+        ax_cpu.set_ylim(top=top)
 
     # Merge legends so solid (CPU) and dashed (FPS) entries appear together.
     h1, l1 = ax_cpu.get_legend_handles_labels()

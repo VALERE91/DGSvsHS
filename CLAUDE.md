@@ -487,4 +487,62 @@ In addition to the §7 list, these were found this session:
 
 ---
 
-End of `CLAUDE.md`. When in doubt, re-read §2 (gameplay model) and §11 (current state + next steps). Most "should I do X?" questions are answered there.
+## 12. Unreal/Mass leg — final architecture (2026-07)
+
+The **fourth leg** (research contribution C): **Unreal Engine 5.7**, gameplay in **Mass ECS**, physics in **Chaos**. Headless dedicated-server target `UnrealvsHSServer`. QUIC via StirlingLabs/MsQuic (client uses quinn). **Port 7780.** Project root: `Unreal/UnrealvsHS/`. This section supersedes anything in §1 that implies only three legs.
+
+### 12.1 Physics — raw Chaos particles owned by Mass (NO per-enemy actors)
+
+This was the make-or-break work. Enemies were originally `AUvHSEnemyBody` **actors** (one `USphereComponent` each). At 15k enemies + ~1k spawns/sec, the AActor/component tax (transform sync, registration, spawn churn) pinned CPU at 100% — an unfair, non-ECS comparison against DGS (DOTS Physics) and Bevy (avian2d), which are ECS-native.
+
+Fixed by moving physics to **raw Chaos rigid-body particles** in the solver, keyed to Mass fragments — no actors, no components:
+
+- **`Server/UvHSEnemyBodyStore.{h,cpp}`** — owns Chaos particles by `int32` handle (freelist-backed). Enemies = **dynamic** spheres; players = **kinematic** spheres. `FSingleParticlePhysicsProxy` + `Solver->RegisterObject`, GT-particle API for force/readback. **Runs in METERS** (not cm) — matches DGS/avian and the shared constants exactly, so `EnemyDriveForce/EnemyMass/EnemyLinearDamping` give terminal velocity = `EnemySpeed`. Gravity off, rotation locked.
+- **Fragment** `FUvHSEnemyChaosBodyFragment` holds an `int32 BodyHandle` (was a `TWeakObjectPtr<AUvHSEnemyBody>`).
+- **Parity with DGS/Bevy (verified against the real code, not this doc):** dynamic enemies **block each other** (default collision filter / no layers) AND a **kinematic player body** they pile against. Bevy: `RigidBody::Dynamic + Collider::circle + LinearDamping + LockedAxes::ROTATION_LOCKED`, player `RigidBody::Kinematic`. DGS: `PhysicsMass.CreateDynamic + PhysicsDamping + PhysicsGravityFactor 0 + InverseInertia 0`, default filter.
+- `AUvHSEnemyBody` is **deleted** — do not reintroduce it.
+- **Gotcha:** the low-level Chaos headers use `std::numeric_limits::min()/max()`; the unity build leaks the Windows `min`/`max` macros in via the QUIC/Sockets TUs. `UvHSEnemyBodyStore.cpp` `#undef`s them before the Chaos includes. Don't remove that.
+
+### 12.2 Physics backend toggle (A/B)
+
+`AUvHSServerGameMode::bUseChaosPhysics` (`UPROPERTY`, default **true**; CLI `-UseChaos=true|false`), copied to `FSimContext::bUseChaosPhysics`:
+- **true** → the Chaos particle backend above.
+- **false** → hand-rolled O(N) force integration (`Sim::EnemySeek` writes velocity, `Sim::EnemyIntegrate` applies damping + position). **No bodies, no contacts** — a deliberate "engine physics vs. no physics" baseline for the paper. Kept on purpose.
+
+`SimRunner::RunOneTick` branches: Chaos → `SyncChaosToFragments` (readback + drive kinematic player bodies); no-Chaos → `EnemyIntegrate`.
+
+### 12.3 Bugs fixed (do not reintroduce)
+
+- **`Sim::RewindResolve` was O(N²).** Lag-comp matched enemies between the two bracketing rewind frames with **nested linear scans** (floor×ceil). With the smoke bot firing every tick at 15k enemies that was ~13 billion ops/sec → 100% pin, mistaken for a "Chaos" cost. Now O(N) via a ceil `TMap<id,index>` + floor `TSet<id>`. (The snapshot-delta path in `Net/SnapshotPriority.cpp` was already O(N) — it uses `ScratchBaselineIndexById`.)
+
+### 12.4 Editor smoke test — dev/Test only, compiled out of Shipping
+
+`Sim::SimulatedClientInput` spawns N still players that **sweep-fire 360° every tick** so rounds auto-run 1→10 with no network client. Enabled by `-SimulatedClients=N` (or, in the editor, `bAutoSmokeTestInEditor` forces 1). Pairs with GodMode (default on). **All of it is `#if !UE_BUILD_SHIPPING`** (the editor-only `UPROPERTY` is `#if WITH_EDITORONLY_DATA` — UHT forbids `WITH_EDITOR` around a `UPROPERTY`). Shipping serves real clients only.
+
+### 12.5 Tick cadence + a parity caveat
+
+Server engine loop capped at **125 Hz** (`GEngine->SetMaxFPS(125)`); the sim steps at **62.5 Hz** via `FSimRunner`'s accumulator (`SimDt` 16 ms, `MaxStepsPerCall = 5`). Same 125/62.5 as DGS/Arch/Bevy. **Caveat:** Chaos physics ticks with the **UWorld physics tick (outer frame rate)**, not the fixed 62.5 Hz sim step — Bevy runs avian in `FixedUpdate` (inner 62.5). Forces accumulate across sub-steps and read back next tick. Not yet reconciled to a fixed physics step; flag if strict physics-step parity is needed.
+
+### 12.6 Profiling + microvm
+
+Trace only works in **Development/Test** builds — **Shipping strips CPU trace scopes** (an empty `.utrace` is the tell). Scripts (x86_64):
+- `Unreal/UnrealvsHS/build_microvm_x86_64.sh` — plain Shipping/real-client microvm, no trace. Optional `SIM_CLIENTS` env removed (Shipping has no smoke test).
+- `Unreal/UnrealvsHS/build_microvm_x86_64_trace.sh` — Test build, streams live to Unreal Insights via `-tracehost=<workstation>:<recorderPort>`. **Recorder port is version-specific** (UE 5.7 store shows Recorder 1981 / Store 1989, NOT 1980) — check Insights → Trace Store tooltip and set `TRACE_PORT`. Open TCP `<recorderPort>` inbound on the workstation firewall.
+
+### 12.7 Key files
+
+- `Server/UvHSServerGameMode.{h,cpp}` — lifecycle SM, `-QuicPort/-UseChaos/-GodMode/-SimulatedClients` parse, `SetMaxFPS`, `BodyStore.Shutdown` on EndPlay.
+- `Server/UvHSEnemyBodyStore.{h,cpp}` — Chaos particle store (the physics core).
+- `Server/SimContext.{h,cpp}` — POCO world state + `BodyStore`, spawn/despawn/destroy wiring.
+- `Server/SimSystems.cpp` — sim steps (EnemySeek/Integrate, RewindResolve O(N), Sync, snapshot).
+- `Server/SimRunner.cpp` — fixed-step accumulator + per-tick order (backend branch).
+- `Mass/UvHSMassTypes.h` — enemy fragments.
+- `Net/{WireCodec,SnapshotPriority,QuicServer}.*` — v4 wire, per-recipient delta.
+
+### 12.8 Result
+
+Unreal now runs **real Chaos rigid-body collision at 15k enemies** and sits in the pack with DGS and Bevy (all ≲45% CPU at round 10) — the AActor tax is gone. This leg is production-ready for trials.
+
+---
+
+End of `CLAUDE.md`. When in doubt, re-read §2 (gameplay model), §11 (C#/Rust legs), and §12 (Unreal leg). Most "should I do X?" questions are answered there.

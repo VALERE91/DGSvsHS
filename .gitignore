@@ -149,6 +149,7 @@ venv/
 # it lives in a sibling repo, easy to share gitignore across)
 # ---------------------------------------------------------------------
 target/
+target-linux/
 Cargo.lock.bak
 **/*.rs.bk
 

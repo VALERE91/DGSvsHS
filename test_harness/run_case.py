@@ -205,7 +205,7 @@ def parse_args() -> argparse.Namespace:
     # Automation flags
     ap.add_argument("-r", "--restart", action="store_true", help="Restart the Proxmox VM and wait 20s before each run")
     ap.add_argument("--runs", type=int, default=1, help="Number of sequential runs to execute")
-    ap.add_argument("--duration-sec", type=float, default=270.0, help="Duration of active benchmark per run in seconds (default 270s / 4m30s)")
+    ap.add_argument("--duration-sec", type=float, default=300.0, help="Duration of active benchmark per run in seconds (default 270s / 4m30s)")
     ap.add_argument("--cooldown-sec", type=float, default=30.0, help="Duration of post-disconnect idle capture (default 30s)")
 
     ap.add_argument("--bots", type=int, default=2, help="Number of autopilot client processes")
