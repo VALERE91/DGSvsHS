@@ -135,6 +135,21 @@ pub fn launch_server(cfg: ServerConfig) {
         .insert_resource(ServerConfigResource(cfg.clone()))
         .add_systems(Startup, setup_server);
 
+    // Spiral-of-death guard. `Time<Fixed>` catches up to wall-clock by running
+    // FixedUpdate repeatedly ("overstep") to drain the accumulator, and
+    // `Time<Virtual>::max_delta` caps how much real time can be fed into that
+    // accumulator per outer Update. Bevy's default cap is 250 ms — at our 16 ms
+    // tick that's up to ~15 FixedUpdate runs bunched into one frame. Once a
+    // single tick's work exceeds 16 ms of wall time (CPU at 100 %), every frame
+    // tries to run ~15 ticks, each now even slower → runaway that kills the
+    // server. For a power benchmark we want the opposite: if the CPU can't keep
+    // up, DROP ticks (let sim time fall behind wall-clock) rather than thrash.
+    // Clamping max_delta to one tick means at most 1–2 catch-up steps per frame,
+    // so overload degrades into graceful slowdown instead of a spiral.
+    app.world_mut()
+        .resource_mut::<Time<Virtual>>()
+        .set_max_delta(Duration::from_secs_f64(game::constants::SIM_DT as f64));
+
     if let Some(secs) = cfg.run_for_seconds {
         app.insert_resource(DurationCap {
             started: std::time::Instant::now(),
