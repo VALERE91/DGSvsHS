@@ -4,11 +4,7 @@ using DGSvsHS.Gameplay;
 using DGSvsHS.Net;
 using UnityEngine;
 
-#if WITH_DGS
-using DGSvsHS.Net.Ngo;
-#else
 using DGSvsHS.Net.Quic;
-#endif
 
 namespace DGSvsHS.Client
 {
@@ -128,11 +124,7 @@ namespace DGSvsHS.Client
             _enemyCorrector = new EnemyCorrector();
             _inputReader = new PlayerInputReader(_camera);
 
-#if WITH_DGS
-            _net = new NgoNetworkClient();
-#else
             _net = new QuicNetworkClient();
-#endif
             _net.Connected += OnConnected;
             _net.Disconnected += OnDisconnected;
             _net.SnapshotReceived += OnSnapshot;

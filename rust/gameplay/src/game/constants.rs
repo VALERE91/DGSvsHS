@@ -61,7 +61,7 @@ pub const PLAYER_LINEAR_DAMPING: f32 = 0.0;
 // ---------- Rounds ----------
 pub const TOTAL_ROUNDS: u32 = 10;
 pub const INTER_ROUND_DELAY_SEC: f32 = 3.0;
-pub const BASE_ENEMIES_PER_ROUND: u32 = 700;
+pub const BASE_ENEMIES_PER_ROUND: u32 = 1700;
 pub const ENEMY_SCALING_PER_ROUND: f32 = 1.4;
 pub const ROUND_SPAWN_WINDOW_SEC: f32 = 18.0;
 
@@ -77,4 +77,4 @@ pub const GRID_HALF_CELLS: i32 = 28;
 // stacking, slow rotation-locked circles). 2 keeps enemy↔enemy separation crisp
 // at ~3x less solver work; 1 is likely fine for this workload (~6x) if the crowd
 // still looks acceptable. Avian-specific knob — no effect on RNG/wire/determinism.
-pub const PHYSICS_SUBSTEPS: u32 = 2;
+pub const PHYSICS_SUBSTEPS: u32 = 1;

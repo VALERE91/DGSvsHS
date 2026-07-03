@@ -5,7 +5,6 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Physics;
 using DGSvsHS.Gameplay;
-using Unity.Physics.Extensions;
 
 namespace DGSvsHS.Server.Dots
 {
@@ -33,7 +32,7 @@ namespace DGSvsHS.Server.Dots
             new SeekJob
             {
                 PlayerTargets = playerTargets.AsArray(),
-                ImpulseMagnitude = Constants.EnemyDriveForce * Constants.SimDt,
+                DriveForce = Constants.EnemyDriveForce,
             }.ScheduleParallel();
 
             state.Dependency = playerTargets.Dispose(state.Dependency);
@@ -44,7 +43,7 @@ namespace DGSvsHS.Server.Dots
         private partial struct SeekJob : IJobEntity
         {
             [ReadOnly] public NativeArray<float2> PlayerTargets;
-            public float ImpulseMagnitude;
+            public float DriveForce;
 
             public void Execute(in Position2D pos, in PhysicsMass mass, ref PhysicsVelocity vel)
             {
@@ -63,8 +62,13 @@ namespace DGSvsHS.Server.Dots
                 if (len <= 0.0001f) return;
                 float2 dir = (best - pos.Value) / len;
 
-                float3 impulse = new float3(dir.x * ImpulseMagnitude, dir.y * ImpulseMagnitude, 0f);
-                vel.ApplyLinearImpulse(in mass, impulse);
+                // Continuous steering force, integrated force-wise to match Bevy
+                // (ExternalForce.apply_force) and Unreal (Chaos ApplyForce): the
+                // solver would do Δv = (F/m)·dt, so we do the same explicitly since
+                // Unity Physics has no force-accumulator component. Damping
+                // (PhysicsDamping) then bleeds it to terminal speed = F/m/damping.
+                float3 force = new float3(dir.x * DriveForce, dir.y * DriveForce, 0f);
+                vel.Linear += force * mass.InverseMass * Constants.SimDt;
             }
         }
     }

@@ -1,12 +1,10 @@
 #include "SimContext.h"
 #include "Gameplay/UvHSConstants.h"
 #include "Mass/UvHSMassTypes.h"
-#include "Server/UvHSEnemyBody.h"
 #include "MassEntityManager.h"
 #include "MassArchetypeTypes.h"
 #include "MassCommonTypes.h"
 #include "MassExecutionContext.h"
-#include "Client/UvHSWorldRenderer.h"  // EntityZ / UnrealsPerMeter
 #include "Engine/World.h"
 
 namespace UnrealvsHS::Server
@@ -73,6 +71,10 @@ namespace UnrealvsHS::Server
 	void FSimContext::AttachWorld(UWorld* InWorld)
 	{
 		World = InWorld;
+		if (bUseChaosPhysics)
+		{
+			BodyStore.Initialize(InWorld);
+		}
 	}
 
 	void FSimContext::ResetForIdle()
@@ -106,22 +108,12 @@ namespace UnrealvsHS::Server
 		VelF.Velocity = FVector2D::ZeroVector;
 		FrcF.Force    = FVector2D::ZeroVector;
 		
-		// Only spawn a Chaos rigid body when the Chaos backend is active. In the
-		// hand-rolled path enemies live purely as Mass fragments (Pos/Vel), and
-		// Sim::EnemySeek + EnemyIntegrate move them — no actor, no physics scene cost.
-		if (bUseChaosPhysics)
+		// Chaos backend: a raw dynamic Chaos particle in the solver (no AActor). The
+		// hand-rolled backend leaves BodyHandle = -1 and moves enemies via Mass only.
+		BodyF.BodyHandle = INDEX_NONE;
+		if (bUseChaosPhysics && BodyStore.IsValid())
 		{
-			if (UWorld* W = World.Get())
-			{
-				const float U = UnrealvsHS::Client::FUvHSWorldRenderer::UnrealsPerMeter;
-				const float Z = UnrealvsHS::Client::FUvHSWorldRenderer::EntityZ;
-				FActorSpawnParameters Params;
-				Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-				Params.ObjectFlags |= RF_Transient;
-				const FVector StartLoc((double)Pos.X * U, (double)Pos.Y * U, Z);
-				AUvHSEnemyBody* Actor = W->SpawnActor<AUvHSEnemyBody>(StartLoc, FRotator::ZeroRotator, Params);
-				BodyF.Actor = Actor;
-			}
+			BodyF.BodyHandle = BodyStore.CreateEnemy(Pos);
 		}
 		++CachedEnemyCount;
 	}
@@ -136,7 +128,7 @@ namespace UnrealvsHS::Server
 		Q.AddRequirement<FUvHSEnemyChaosBodyFragment>(EMassFragmentAccess::ReadOnly);
 
 		TArray<FMassEntityHandle> Handles;
-		TArray<TWeakObjectPtr<AUvHSEnemyBody>> BodiesToDestroy;
+		TArray<int32> BodiesToDestroy;
 		FMassExecutionContext ExecContext(*MassEntityManager);
 		Q.ForEachEntityChunk(ExecContext, [&Handles, &BodiesToDestroy](FMassExecutionContext& ExecCtx)
 		{
@@ -145,12 +137,12 @@ namespace UnrealvsHS::Server
 			for (int32 i = 0; i < N; ++i)
 			{
 				Handles.Add(ExecCtx.GetEntity(i));
-				BodiesToDestroy.Add(Bodies[i].Actor);
+				BodiesToDestroy.Add(Bodies[i].BodyHandle);
 			}
 		});
-		for (const TWeakObjectPtr<AUvHSEnemyBody>& B : BodiesToDestroy)
+		for (const int32 H : BodiesToDestroy)
 		{
-			if (AUvHSEnemyBody* Actor = B.Get()) Actor->Destroy();
+			if (H != INDEX_NONE) BodyStore.Destroy(H);
 		}
 		if (Handles.Num() > 0)
 		{
@@ -180,13 +172,24 @@ namespace UnrealvsHS::Server
 		P.Aim          = FVector2D(1.0, 0.0);
 		P.FireCooldown = 0.0f;
 		P.DisableTimer = 0.0f;
+		// Kinematic Chaos body so dynamic enemies collide/pile against the player,
+		// matching Bevy (RigidBody::Kinematic + collider) and DGS. Driven by input
+		// each tick via Sim::SyncChaosToFragments (SetKinematicPosition).
+		if (bUseChaosPhysics && BodyStore.IsValid())
+		{
+			P.BodyHandle = BodyStore.CreatePlayer(P.Position);
+		}
 		Players.Add(P);
 	}
 
 	void FSimContext::DespawnPlayer(uint8 Slot)
 	{
 		const int32 Idx = PlayerIndexBySlot(Slot);
-		if (Idx != INDEX_NONE) Players.RemoveAt(Idx);
+		if (Idx != INDEX_NONE)
+		{
+			if (Players[Idx].BodyHandle != INDEX_NONE) BodyStore.Destroy(Players[Idx].BodyHandle);
+			Players.RemoveAt(Idx);
+		}
 	}
 
 	int32 FSimContext::AlivePlayerCount() const

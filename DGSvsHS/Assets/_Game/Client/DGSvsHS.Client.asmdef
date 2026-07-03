@@ -4,7 +4,6 @@
     "references": [
         "DGSvsHS.Gameplay",
         "DGSvsHS.Net",
-        "DGSvsHS.Net.Ngo",
         "DGSvsHS.Net.Quic",
         "Unity.InputSystem"
     ],

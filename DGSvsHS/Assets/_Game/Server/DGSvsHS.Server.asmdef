@@ -4,7 +4,7 @@
     "references": [
         "DGSvsHS.Gameplay",
         "DGSvsHS.Net",
-        "DGSvsHS.Net.Ngo",
+        "DGSvsHS.Net.Quic",
         "Unity.Entities",
         "Unity.Collections",
         "Unity.Burst",

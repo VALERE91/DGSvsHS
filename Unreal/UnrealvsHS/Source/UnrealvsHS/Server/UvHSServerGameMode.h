@@ -37,7 +37,7 @@ public:
 	bool bGodMode = true;                 // disable contact-disable for compute-only trials
 
 	UPROPERTY(EditAnywhere, Category="Server")
-	bool bUseChaosPhysics = false;        // false = hand-rolled force integration (no Chaos, no contacts, O(N)); true = Chaos rigid bodies. CLI: -UseChaos=true|false
+	bool bUseChaosPhysics = true;         // true = real Chaos rigid bodies w/ collision (parity with DGS/Bevy); false = hand-rolled force integration (no contacts). CLI: -UseChaos=true|false
 
 	UPROPERTY(EditAnywhere, Category="Server")
 	float HeartbeatIntervalSec = 1.0f;    // console log cadence (separate from /tmp/stats.log @ 20 Hz)

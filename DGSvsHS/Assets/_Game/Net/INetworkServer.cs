@@ -13,7 +13,9 @@ namespace DGSvsHS.Net
         event Action<byte, InputCmd> InputReceived;
         
         float GetRttMs(byte playerId);
-        
+
+        void SetServerTick(uint tick);
+
         void Start(ushort port);
         
         bool TryDequeueInput(byte playerId, out InputCmd cmd);

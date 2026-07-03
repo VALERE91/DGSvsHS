@@ -128,7 +128,7 @@ pub fn enemy_seek(
     // as the jam shifts, so seek behaviour is preserved. Kills/disable go through
     // the hand-rolled grid, independent of physics sleep, so sleeping enemies are
     // still resolved correctly.
-    mut enemies: Query<(&Pos2D, &mut LinearVelocity), (With<Enemy>, Without<Sleeping>)>,
+    mut enemies: Query<(&Pos2D, Forces), (With<Enemy>, Without<Sleeping>)>,
 ) {
     // Build target list in slot order so the (vanishingly rare) exact-distance
     // tie-break is deterministic across runs/builds.
@@ -143,7 +143,7 @@ pub fn enemy_seek(
     if targets.is_empty() {
         return;
     }
-    for (pos, mut lv) in enemies.iter_mut() {
+    for (pos, mut forces) in enemies.iter_mut() {
         let p = pos_vec(pos);
         let mut best = targets[0];
         let mut best_sq = f32::MAX;
@@ -161,13 +161,13 @@ pub fn enemy_seek(
         } else {
             continue;
         }
-        // Per-tick linear impulse, mirroring the DOTS EnemySeekSystem exactly:
-        // ImpulseMagnitude = EnemyDriveForce * SimDt, applied as Δv = impulse / mass
-        // (PhysicsVelocity.ApplyLinearImpulse). ENEMY_MASS = 1 so steady-state speed
-        // stays EnemyDriveForce / EnemyLinearDamping = EnemySpeed. Unlike the old
-        // continuous `Forces::apply_force`, a direct velocity change leaves no
-        // persistent ExternalForce to keep jammed bodies awake, so they can sleep.
-        lv.0 += dir * (ENEMY_DRIVE_FORCE * SIM_DT / ENEMY_MASS);
+        // Continuous steering force, mirroring the DOTS/Unreal legs: Avian
+        // integrates it as Δv = (F/m)·dt and LinearDamping bleeds to terminal speed
+        // EnemyDriveForce / EnemyLinearDamping = EnemySpeed. The `Without<Sleeping>`
+        // filter above means only awake enemies are driven, so a jammed core with
+        // ~zero velocity still sleeps; contacts wake bodies back into the query when
+        // the jam shifts.
+        forces.apply_force(dir * ENEMY_DRIVE_FORCE);
     }
 }
 

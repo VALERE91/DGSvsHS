@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Gameplay/DeterministicRng.h"
 #include "Net/WireTypes.h"
+#include "Server/UvHSEnemyBodyStore.h"
 #include "UObject/WeakObjectPtr.h"
 
 struct FMassEntityManager;
@@ -22,6 +23,7 @@ namespace UnrealvsHS::Server
 		FVector2D Aim             = FVector2D(1.0, 0.0);
 		float     FireCooldown    = 0.0f;
 		float     DisableTimer    = 0.0f;
+		int32     BodyHandle      = INDEX_NONE;   // kinematic Chaos body (BodyStore), so enemies pile against the player
 	};
 	
 
@@ -110,10 +112,10 @@ namespace UnrealvsHS::Server
 		bool                  bGodMode = false;
 		uint64                Seed = 0;
 
-		// Enemy physics backend. true = Chaos rigid bodies (AUvHSEnemyBody actors).
-		// false = hand-rolled force integration in Sim::EnemySeek + EnemyIntegrate,
-		// no Chaos bodies spawned at all (zero contact/solver cost). Set from the
-		// server GameMode's bUseChaosPhysics before the sim runs.
+		// Enemy physics backend. true = real Chaos rigid-body particles in the solver
+		// (FUvHSEnemyBodyStore, collide like DGS/Bevy). false = hand-rolled force
+		// integration in Sim::EnemySeek + EnemyIntegrate, no Chaos bodies at all (a
+		// contact-free A/B baseline). Set from the GameMode's bUseChaosPhysics.
 		bool                  bUseChaosPhysics = false;
 
 #if !UE_BUILD_SHIPPING
@@ -134,7 +136,11 @@ namespace UnrealvsHS::Server
 		int32                              CachedEnemyCount = 0;  
 
 		TWeakObjectPtr<UWorld>             World;
-		
+
+		// Raw Chaos particle bodies (enemies dynamic, players kinematic) — no AActors.
+		// Only used when bUseChaosPhysics; the no-Chaos backend leaves handles at -1.
+		FUvHSEnemyBodyStore                BodyStore;
+
 		TArray<FTickInput>    TickInputs;
 		
 		TArray<FPendingFire>  PendingFires;

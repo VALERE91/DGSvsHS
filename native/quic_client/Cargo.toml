@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 quinn = "0.10"
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
+rcgen = "0.11"                          # self-signed server cert (server.rs); rustls-0.21-compatible DER
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "io-util", "time"] }
 bytes = "1"
 thiserror = "2"

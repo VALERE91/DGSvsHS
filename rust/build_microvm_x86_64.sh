@@ -12,24 +12,37 @@ cd "$PROJECT_ROOT"
 # On Linux x86_64 host (Ryzen / Proxmox / Hetzner): accel=kvm is native speed.
 # On macOS Intel: accel=hvf. On WSL or any non-KVM host: drop the accel flag (TCG).
 #
-# Usage:
-#   ./build_microvm_x86_64.sh             # normal build (-> bevy-microvm.iso)
-#   ./build_microvm_x86_64.sh --god-mode  # build with --god-mode CLI flag baked in
-#                                         # (init.sh launches `./dgsvshs-bevy --god-mode`)
-#                                         # (-> bevy-microvm-godmode.iso)
+# Usage (flags combine, e.g. `--god-mode --tracy`):
+#   ./build_microvm_x86_64.sh                # clean release (-> bevy-microvm.iso)
+#   ./build_microvm_x86_64.sh --god-mode     # bake --god-mode into the launch (-> ...-godmode.iso)
+#   ./build_microvm_x86_64.sh --tracy        # build with the tracy feature for profiling (-> ...-tracy.iso)
+#   ./build_microvm_x86_64.sh --god-mode --tracy   # both (-> ...-godmode-tracy.iso)
+# --tracy compiles `-p cli --features tracy` (Bevy spans -> Tracy). Without it the
+# release carries zero tracing/debug overhead.
 
 god_mode=0
+tracy=0
 for arg in "$@"; do
     case "$arg" in
         --god-mode) god_mode=1 ;;
+        --tracy)    tracy=1 ;;
         *) echo "[build] unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
 flavor_suffix=""
 launch_args=""
+features_arg=""
 if [[ $god_mode -eq 1 ]]; then
-    flavor_suffix="-godmode"
+    flavor_suffix="${flavor_suffix}-godmode"
     launch_args="--god-mode"
+fi
+if [[ $tracy -eq 1 ]]; then
+    flavor_suffix="${flavor_suffix}-tracy"
+    # Build the cli crate with the tracy feature (streams Bevy + hot-path spans to a
+    # Tracy profiler). -p cli is required because --features needs a package context
+    # in this multi-member workspace. Without --tracy, the release is clean (no
+    # trace_tracy / debug overhead).
+    features_arg="-p cli --features tracy"
 fi
 echo "==> Flavor: ${flavor_suffix:-normal}"
 
@@ -42,7 +55,7 @@ STATIC_DNS="${STATIC_DNS:-8.8.8.8}"
 echo "==> Static IP for this build: ${STATIC_IP}/${STATIC_CIDR} gw=${STATIC_GATEWAY} dns=${STATIC_DNS}"
 
 echo "==> Compiling Bevy Server..."
-cargo zigbuild --target x86_64-unknown-linux-musl --release
+cargo zigbuild --target x86_64-unknown-linux-musl --release $features_arg
 
 mkdir -p .microvm_x86_64
 cd .microvm_x86_64
@@ -176,6 +189,10 @@ log "Output -> /tmp/rust.log (tail -f /tmp/rust.log from shell to watch)"
 log "ip guardian PID \$! — re-asserts ${STATIC_IP} if anything wipes it"
 
 cd /opt/app
+# Tracy aborts at startup in a QEMU guest because the virtual CPU doesn't advertise
+# invariant TSC. Skip that check so the profiler starts. NOTE: TSC-based timings can
+# be unreliable in a VM; for accurate low-res timings rebuild with TRACY_TIMER_FALLBACK.
+export TRACY_NO_INVARIANT_CHECK=1
 # Server output to log file so it doesn't interleave with the shell on /dev/console.
 ./dgsvshs-bevy ${launch_args} > /tmp/rust.log 2>&1 &
 BEVY_PID=\$!

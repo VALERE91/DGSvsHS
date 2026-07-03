@@ -26,9 +26,9 @@ namespace DGSvsHS.Server.Dots
             var round = SystemAPI.GetSingleton<RoundState>();
 
             s.Clear();
-            s.Kind = SnapshotKind.Full;     // NgoNetworkServer composes per-recipient delta from this baseline
+            s.Kind = SnapshotKind.Full;     // QuicNetworkServer composes per-recipient delta from this baseline
             s.Tick = clock.Tick;
-            s.LastProcessedInputTick = 0;   // per-recipient; set by NgoNetworkServer.ComposeAndSend
+            s.LastProcessedInputTick = 0;   // per-recipient; set by QuicNetworkServer.ComposeAndSend
             s.Round = round.Round;
             s.RoundTimer = round.RoundTimer;
             s.InterRoundTimer = round.InterRoundTimer;

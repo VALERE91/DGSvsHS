@@ -63,7 +63,7 @@ namespace DGSvsHS.Gameplay
         // ---------- Rounds ----------
         public const int TotalRounds = 10;
         public const float InterRoundDelaySec = 3f;
-        public const int BaseEnemiesPerRound = 700;
+        public const int BaseEnemiesPerRound = 1700;
         public const float EnemyScalingPerRound = 1.4f;
         public const float RoundSpawnWindowSec = 18f;
 

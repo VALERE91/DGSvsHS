@@ -54,7 +54,7 @@ namespace UnrealvsHS::Constants
 	// ---------- Rounds ----------
 	constexpr int   TotalRounds            = 10;
 	constexpr float InterRoundDelaySec     = 3.0f;
-	constexpr int   BaseEnemiesPerRound    = 700;
+	constexpr int   BaseEnemiesPerRound    = 1700;
 	constexpr float EnemyScalingPerRound   = 1.4f;
 	constexpr float RoundSpawnWindowSec    = 18.0f;
 

@@ -8,7 +8,7 @@ using Unity.Physics.Systems;
 using Unity.Transforms;
 using DGSvsHS.Gameplay;
 using DGSvsHS.Net;
-using DGSvsHS.Net.Ngo;
+using DGSvsHS.Net.Quic;
 using DGSvsHS.Server.Dots;
 using Unity.Collections;
 using UnityEngine;
@@ -49,7 +49,7 @@ namespace DGSvsHS.Server
 
         // ---------- Runtime ----------
 
-        private NgoNetworkServer _net;
+        private INetworkServer _net;
         private World _simWorld;
         private SimulationSystemGroup _simGroup;
         private RewindResolveSystem _rewindResolveSystem;
@@ -193,7 +193,7 @@ namespace DGSvsHS.Server
 
             _history = new WorldStateHistory(Constants.SnapshotHistoryTicks);
 
-            _net = new NgoNetworkServer();
+            _net = new QuicNetworkServer();
             _net.ClientConnected += OnClientConnected;
             _net.ClientDisconnected += OnClientDisconnected;
             _net.InputReceived += OnInputReceived;

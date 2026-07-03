@@ -163,6 +163,7 @@ void AUvHSServerGameMode::EndPlay(const EEndPlayReason::Type Reason)
 {
 	UE_LOG(LogTemp, Display, TEXT("[UvHSServer] EndPlay reason=%d tick=%u"), (int32)Reason, Ctx.Tick);
 	Ctx.State = EServerLifecycle::ShuttingDown;
+	Ctx.BodyStore.Shutdown();   // unregister all Chaos particles from the solver
 	Quic.Stop();
 	Super::EndPlay(Reason);
 }

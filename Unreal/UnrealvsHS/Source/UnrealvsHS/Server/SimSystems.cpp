@@ -1,7 +1,6 @@
 #include "SimSystems.h"
 #include "Gameplay/UvHSConstants.h"
 #include "Mass/UvHSMassTypes.h"
-#include "Server/UvHSEnemyBody.h"
 #include "MassEntityManager.h"
 #include "MassEntityQuery.h"
 #include "MassExecutionContext.h"
@@ -461,23 +460,37 @@ namespace UnrealvsHS::Server::Sim
 		if (Killed.Num() > 0)
 		{
 			TArray<FMassEntityHandle> ToDestroy;
+			TArray<int32> BodiesToDestroy;
 			ToDestroy.Reserve(Killed.Num());
+			BodiesToDestroy.Reserve(Killed.Num());
 
 			FMassEntityQuery Q(Ctx.MassEntityManager);
 			Q.AddTagRequirement<FUvHSEnemyTag>(EMassFragmentPresence::All);
 			Q.AddRequirement<FUvHSEnemyIdFragment>(EMassFragmentAccess::ReadOnly);
+			Q.AddRequirement<FUvHSEnemyChaosBodyFragment>(EMassFragmentAccess::ReadOnly);
 
 			FMassExecutionContext ExecContext(*Ctx.MassEntityManager);
 			Q.ForEachEntityChunk(ExecContext,
-				[&Killed, &ToDestroy](FMassExecutionContext& ExecCtx)
+				[&Killed, &ToDestroy, &BodiesToDestroy](FMassExecutionContext& ExecCtx)
 			{
 				const int32 N = ExecCtx.GetNumEntities();
 				const auto Ids = ExecCtx.GetFragmentView<FUvHSEnemyIdFragment>();
+				const auto Bodies = ExecCtx.GetFragmentView<FUvHSEnemyChaosBodyFragment>();
 				for (int32 i = 0; i < N; ++i)
 				{
-					if (Killed.Contains(Ids[i].Id)) ToDestroy.Add(ExecCtx.GetEntity(i));
+					if (Killed.Contains(Ids[i].Id))
+					{
+						ToDestroy.Add(ExecCtx.GetEntity(i));
+						BodiesToDestroy.Add(Bodies[i].BodyHandle);
+					}
 				}
 			});
+
+			// Release the Chaos particles of killed enemies (no-op handles are -1).
+			for (const int32 H : BodiesToDestroy)
+			{
+				if (H != INDEX_NONE) Ctx.BodyStore.Destroy(H);
+			}
 
 			if (ToDestroy.Num() > 0)
 			{
@@ -541,9 +554,10 @@ namespace UnrealvsHS::Server::Sim
 		if (bChaos) Q.AddRequirement<FUvHSEnemyChaosBodyFragment>(EMassFragmentAccess::ReadWrite);
 		else        Q.AddRequirement<FUvHSEnemyVelocityFragment>(EMassFragmentAccess::ReadWrite);
 
+		FUvHSEnemyBodyStore* Store = &Ctx.BodyStore;
 		FMassExecutionContext ExecContext(*Ctx.MassEntityManager);
 		Q.ForEachEntityChunk(ExecContext,
-			[&TargetPos, bChaos, DriveF, AccelDt](FMassExecutionContext& ExecCtx)
+			[&TargetPos, bChaos, DriveF, AccelDt, Store](FMassExecutionContext& ExecCtx)
 		{
 			const int32 N = ExecCtx.GetNumEntities();
 			const auto Positions = ExecCtx.GetFragmentView<FUvHSEnemyPositionFragment>();
@@ -554,10 +568,7 @@ namespace UnrealvsHS::Server::Sim
 				{
 					const FVector2D Dir = NearestSeekDir(Positions[i].Position, TargetPos);
 					if (Dir.IsNearlyZero()) continue;
-					if (AUvHSEnemyBody* Actor = Bodies[i].Actor.Get())
-					{
-						Actor->AddPlanarForce(Dir * DriveF);
-					}
+					Store->ApplyForce(Bodies[i].BodyHandle, Dir * DriveF);
 				}
 			}
 			else
@@ -614,6 +625,15 @@ namespace UnrealvsHS::Server::Sim
 	{
 		if (!Ctx.MassEntityManager.IsValid()) return;
 
+		FUvHSEnemyBodyStore& Store = Ctx.BodyStore;
+
+		// Drive each kinematic player body to the player's authoritative position, so
+		// dynamic enemies collide/pile against it (input owns the player position).
+		for (const FPlayerState& P : Ctx.Players)
+		{
+			if (P.BodyHandle != INDEX_NONE) Store.SetKinematicPosition(P.BodyHandle, P.Position);
+		}
+
 		FMassEntityQuery Q(Ctx.MassEntityManager);
 		Q.AddTagRequirement<FUvHSEnemyTag>(EMassFragmentPresence::All);
 		Q.AddRequirement<FUvHSEnemyPositionFragment>(EMassFragmentAccess::ReadWrite);
@@ -621,7 +641,7 @@ namespace UnrealvsHS::Server::Sim
 		Q.AddRequirement<FUvHSEnemyChaosBodyFragment>(EMassFragmentAccess::ReadOnly);
 
 		FMassExecutionContext ExecContext(*Ctx.MassEntityManager);
-		Q.ForEachEntityChunk(ExecContext, [](FMassExecutionContext& ExecCtx)
+		Q.ForEachEntityChunk(ExecContext, [&Store](FMassExecutionContext& ExecCtx)
 		{
 			const int32 N = ExecCtx.GetNumEntities();
 			auto Positions  = ExecCtx.GetMutableFragmentView<FUvHSEnemyPositionFragment>();
@@ -629,10 +649,11 @@ namespace UnrealvsHS::Server::Sim
 			const auto Bodies = ExecCtx.GetFragmentView<FUvHSEnemyChaosBodyFragment>();
 			for (int32 i = 0; i < N; ++i)
 			{
-				if (AUvHSEnemyBody* Actor = Bodies[i].Actor.Get())
+				FVector2D Pos, Vel;
+				if (Store.GetState(Bodies[i].BodyHandle, Pos, Vel))
 				{
-					Positions[i].Position = Actor->GetPlanarPosition();
-					Velocities[i].Velocity = Actor->GetPlanarVelocity();
+					Positions[i].Position  = Pos;
+					Velocities[i].Velocity = Vel;
 				}
 			}
 		});

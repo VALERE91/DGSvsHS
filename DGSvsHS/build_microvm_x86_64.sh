@@ -94,6 +94,26 @@ fi
 rm -rf unity_build
 cp -a "$BUILD_DIR" unity_build
 
+# The DGS server now P/Invokes the native QUIC socket (libdgsvshs_socket.so). Unity
+# doesn't reliably bundle it into *_Data/Plugins for Linux, so drop it next to the
+# binary; init.sh adds /opt/app to LD_LIBRARY_PATH so dlopen always resolves it.
+# Build the .so for Debian bookworm glibc (see the header note) into Assets/Plugins.
+SOCKET_SO="../Assets/Plugins/x86_64/libdgsvshs_socket.so"
+if [ -f "$SOCKET_SO" ]; then
+    # Stage under both names — IL2CPP's Linux resolver tried the raw "dgsvshs_socket"
+    # (see the DllNotFound error); provide lib-prefixed too so either lookup resolves.
+    cp "$SOCKET_SO" unity_build/libdgsvshs_socket.so
+    cp "$SOCKET_SO" unity_build/dgsvshs_socket.so
+    echo "==> Bundled libdgsvshs_socket.so (+ dgsvshs_socket.so) next to the Unity binary."
+else
+    echo "WARN: $SOCKET_SO not found — the DGS QUIC server will DllNotFoundException."
+    echo "      Build it (Debian-bookworm glibc) and place it there:"
+    echo "        docker run --rm -v \"\$(pwd)/native/quic_client:/src\" -w /src rust:1-bookworm \\"
+    echo "          cargo build --release --target-dir /src/target-linux"
+    echo "        cp native/quic_client/target-linux/release/libdgsvshs_socket.so \\"
+    echo "           DGSvsHS/Assets/Plugins/x86_64/"
+fi
+
 cat > Dockerfile.microvm <<DOCKEREOF
 FROM --platform=linux/amd64 debian:bookworm-slim
 
@@ -182,6 +202,8 @@ log "launching Unity: ./${BINARY_FILE} -batchmode -nographics"
 log "Unity output -> /tmp/unity.log (tail -f /tmp/unity.log from shell to watch)"
 
 cd /opt/app
+# Resolve the native QUIC socket (libdgsvshs_socket.so) staged next to the binary.
+export LD_LIBRARY_PATH="/opt/app:\$LD_LIBRARY_PATH"
 "./${BINARY_FILE}" -batchmode -nographics -logFile - > /tmp/unity.log 2>&1 &
 UNITY_PID=\$!
 log "Unity launched as PID \$UNITY_PID"

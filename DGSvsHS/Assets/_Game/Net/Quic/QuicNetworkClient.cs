@@ -1,4 +1,3 @@
-#if !WITH_DGS
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -207,4 +206,3 @@ namespace DGSvsHS.Net.Quic
         }
     }
 }
-#endif

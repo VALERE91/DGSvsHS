@@ -14,7 +14,6 @@
 #include "UObject/WeakObjectPtr.h"
 #include "UvHSMassTypes.generated.h"
 
-class AUvHSEnemyBody;
 
 USTRUCT()
 struct FUvHSEnemyTag : public FMassTag
@@ -59,6 +58,8 @@ USTRUCT()
 struct FUvHSEnemyChaosBodyFragment : public FMassFragment
 {
 	GENERATED_BODY()
+	// Handle into FSimContext::BodyStore — a raw Chaos particle, NOT an AActor.
+	// INDEX_NONE when no physics body (no-Chaos backend, or spawn failed).
 	UPROPERTY()
-	TWeakObjectPtr<AUvHSEnemyBody> Actor;
+	int32 BodyHandle = -1;
 };
