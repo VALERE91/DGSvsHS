@@ -68,6 +68,7 @@ impl RewindRing {
     /// Overwrite the head slot with this tick's enemy positions and advance.
     /// Reuses the slot's per-cell Vecs + map allocation to avoid per-tick churn.
     pub fn record(&mut self, tick: u32, it: impl Iterator<Item = (u32, Vec2)>) {
+        crate::hot_span!("rewind_ring_record");
         let geom = self.geom;
         let slot = &mut self.frames[self.head];
         slot.tick = tick;
@@ -155,6 +156,7 @@ impl RewindRing {
         fire_index: usize,
         kill_owner: &mut HashMap<u32, usize>,
     ) -> u32 {
+        crate::hot_span!("rewind_resolve_fire");
         let Some((floor_i, ceil_i, alpha)) = self.bracket(view_tick_f) else {
             return 0;
         };

@@ -401,6 +401,7 @@ pub fn write_full_snapshot_body(
     enemy_total_in_world: u32,
     fires: &[FireEvent],
 ) {
+    crate::hot_span!("write_full_snapshot_body");
     let mut w = W::new(buf);
     let pcount = players.len().min(u8::MAX as usize);
     w.u8(pcount as u8);
@@ -459,6 +460,7 @@ pub fn write_delta_snapshot_body(
     enemy_total_in_world: u32,
     fires: &[FireEvent],
 ) {
+    crate::hot_span!("write_delta_snapshot_body");
     let mut w = W::new(buf);
     let pcount = players.len().min(u8::MAX as usize);
     w.u8(pcount as u8);

@@ -183,6 +183,7 @@ fn quic_recv(
     let conns: &mut QuicConnections = &mut conns;
 
     // Drain the UDP socket, routing or accepting per packet.
+    let udp_drain_span = crate::hot_span_guard!("quic_recv_udp_drain");
     loop {
         let (len, from) = match socket.socket.recv_from(&mut buf) {
             Ok(v) => v,
@@ -321,6 +322,8 @@ fn quic_recv(
 
     // After UDP drain, walk every connection once: emit handshake-completion
     // events and surface app-layer DATAGRAM / stream chunks.
+    drop(udp_drain_span);
+    let _app_drain_span = crate::hot_span_guard!("quic_recv_app_drain");
     let mut sbuf = [0u8; STREAM_CHUNK];
     let mut dbuf = [0u8; MAX_DATAGRAM_SIZE];
     for state in conns.map.values_mut() {
@@ -426,6 +429,7 @@ fn quic_send(
 ) {
     let conns: &mut QuicConnections = &mut conns;
     let mut out = [0u8; MAX_DATAGRAM_SIZE];
+    let flush_span = crate::hot_span_guard!("quic_send_flush");
     for state in conns.map.values_mut() {
         loop {
             let (n, send_info) = match state.conn.send(&mut out) {
@@ -447,6 +451,7 @@ fn quic_send(
         }
         state.next_timeout = state.conn.timeout().map(|d| Instant::now() + d);
     }
+    drop(flush_span);
 
     let closed: Vec<ConnectionId<'static>> = conns
         .map
