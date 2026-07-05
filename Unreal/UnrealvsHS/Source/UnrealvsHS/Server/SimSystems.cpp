@@ -566,9 +566,15 @@ namespace UnrealvsHS::Server::Sim
 				const auto Bodies = ExecCtx.GetFragmentView<FUvHSEnemyChaosBodyFragment>();
 				for (int32 i = 0; i < N; ++i)
 				{
+					// Don't drive sleeping bodies: a continuous force would keep the
+					// jammed core awake and in the solve island. Skipping lets Chaos
+					// keep it asleep; contacts from the moving fringe wake it when the
+					// jam shifts. Mirrors the Bevy leg's `Without<Sleeping>` gate.
+					const int32 H = Bodies[i].BodyHandle;
+					if (Store->IsSleeping(H)) continue;
 					const FVector2D Dir = NearestSeekDir(Positions[i].Position, TargetPos);
 					if (Dir.IsNearlyZero()) continue;
-					Store->ApplyForce(Bodies[i].BodyHandle, Dir * DriveF);
+					Store->ApplyForce(H, Dir * DriveF);
 				}
 			}
 			else

@@ -133,6 +133,13 @@ namespace UnrealvsHS::Server
 		return true;
 	}
 
+	bool FUvHSEnemyBodyStore::IsSleeping(int32 Handle) const
+	{
+		if (!ValidHandle(Handle) || Bodies[Handle].bKinematic) return false;
+		const FRigidBodyHandle_External& Body = Bodies[Handle].Proxy->GetGameThreadAPI();
+		return Body.ObjectState() == EObjectStateType::Sleeping;
+	}
+
 	void FUvHSEnemyBodyStore::Shutdown()
 	{
 		FPBDRigidsSolver* S = AsSolver(Solver);

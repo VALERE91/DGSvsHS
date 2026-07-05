@@ -34,6 +34,19 @@ METRICS = {
 }
 FLAVOR_COLORS     = {'dgs': '#1f77b4', 'arch': '#ff7f0e', 'bevy': '#2ca02c', 'unreal': '#d62728'} # Blue,    Orange,    Green,   Red       — CPU / single-metric plots
 FLAVOR_FPS_COLORS = {'dgs': '#0d3b66', 'arch': '#a04000', 'bevy': '#145214', 'unreal': '#7a1212'} # Navy,    BurntOrng, ForestGrn, Maroon  — FPS line on CPU-vs-FPS overlays (same family, darker)
+
+# Human-readable display labels (legend, titles, filenames). Internal keys stay
+# lowercase ('dgs') because they're parsed from filenames and key the color
+# dicts; only the presentation string changes.
+FLAVOR_LABELS = {'dgs': 'Unity', 'arch': 'ARCH', 'bevy': 'Bevy', 'unreal': 'Unreal'}
+
+def flavor_label(flavor):
+    return FLAVOR_LABELS.get(flavor, flavor.upper())
+
+# Draw order for overlapping lines on multi-flavor plots: higher zorder = on top.
+# Green (bevy) drawn last/on top, red (unreal) at the bottom, per request.
+# Values start at 2 so lines stay above the grid.
+FLAVOR_ZORDER = {'unreal': 2, 'arch': 3, 'dgs': 4, 'bevy': 5}
 # ---------------------
 
 def parse_files():
@@ -129,7 +142,8 @@ def plot_graph(x_data_dict, y_data_dict, title, ylabel, filename):
             # Application du lissage avant de tracer
             y_smoothed = smooth_data(y_vals, SMOOTHING_WINDOW)
 
-            plt.plot(x_vals, y_smoothed, label=flavor.upper(), color=color, linewidth=1.5, alpha=0.85)
+            plt.plot(x_vals, y_smoothed, label=flavor_label(flavor), color=color, linewidth=1.5, alpha=0.85,
+                     zorder=FLAVOR_ZORDER.get(flavor, 2))
             smoothed_series.append(y_smoothed)
             has_data = True
 
@@ -176,12 +190,12 @@ def plot_cpu_vs_fps(x_dict, cpu_dict, fps_dict, title, filename, fps_label='Sim 
         if cpu_vals is not None and len(cpu_vals) > 0:
             cpu_s = smooth_data(cpu_vals, SMOOTHING_WINDOW)
             ax_cpu.plot(x_vals, cpu_s,
-                        label=f"{flavor.upper()} CPU", color=cpu_color,
+                        label=f"{flavor_label(flavor)} CPU", color=cpu_color,
                         linestyle='-', linewidth=1.5, alpha=0.85)
             cpu_smoothed.append(cpu_s)
         if fps_vals is not None and len(fps_vals) > 0:
             ax_fps.plot(x_vals, smooth_data(fps_vals, SMOOTHING_WINDOW),
-                        label=f"{flavor.upper()} {fps_label}", color=fps_color,
+                        label=f"{flavor_label(flavor)} {fps_label}", color=fps_color,
                         linestyle='--', linewidth=1.5, alpha=0.85)
 
     ax_cpu.set_title(title, fontsize=14, fontweight='bold')
@@ -272,11 +286,11 @@ def main():
         ind = {flavor: avg_data[flavor].get('inner_fps')} if 'inner_fps' in avg_data.get(flavor, {}) else {}
         otd = {flavor: avg_data[flavor].get('outer_fps')} if 'outer_fps' in avg_data.get(flavor, {}) else {}
         plot_cpu_vs_fps(xd, cd, ind,
-                        f"AVERAGE [{flavor.upper()}]: CPU vs Sim FPS ({len(run_numbers)} Runs)",
-                        f"{OUTPUT_DIR}/averages/Avg_{flavor.upper()}_CPU_vs_Sim_FPS.svg", fps_label='Sim FPS')
+                        f"AVERAGE [{flavor_label(flavor)}]: CPU vs Sim FPS ({len(run_numbers)} Runs)",
+                        f"{OUTPUT_DIR}/averages/Avg_{flavor_label(flavor)}_CPU_vs_Sim_FPS.svg", fps_label='Sim FPS')
         plot_cpu_vs_fps(xd, cd, otd,
-                        f"AVERAGE [{flavor.upper()}]: CPU vs Update FPS ({len(run_numbers)} Runs)",
-                        f"{OUTPUT_DIR}/averages/Avg_{flavor.upper()}_CPU_vs_Update_FPS.svg", fps_label='Update FPS')
+                        f"AVERAGE [{flavor_label(flavor)}]: CPU vs Update FPS ({len(run_numbers)} Runs)",
+                        f"{OUTPUT_DIR}/averages/Avg_{flavor_label(flavor)}_CPU_vs_Update_FPS.svg", fps_label='Update FPS')
         avg_overlays += 2
 
     print(f"[+] Generated {len(METRICS) + avg_overlays} Average Graphs.")
@@ -307,11 +321,11 @@ def main():
             ind = {flavor: data[flavor][run_num].get('inner_fps')}
             otd = {flavor: data[flavor][run_num].get('outer_fps')}
             plot_cpu_vs_fps(xd, cd, ind,
-                            f"RUN {run_num} [{flavor.upper()}]: CPU vs Sim FPS",
-                            f"{OUTPUT_DIR}/individual/Run_{run_num}_{flavor.upper()}_CPU_vs_Sim_FPS.svg", fps_label='Sim FPS')
+                            f"RUN {run_num} [{flavor_label(flavor)}]: CPU vs Sim FPS",
+                            f"{OUTPUT_DIR}/individual/Run_{run_num}_{flavor_label(flavor)}_CPU_vs_Sim_FPS.svg", fps_label='Sim FPS')
             plot_cpu_vs_fps(xd, cd, otd,
-                            f"RUN {run_num} [{flavor.upper()}]: CPU vs Update FPS",
-                            f"{OUTPUT_DIR}/individual/Run_{run_num}_{flavor.upper()}_CPU_vs_Update_FPS.svg", fps_label='Update FPS')
+                            f"RUN {run_num} [{flavor_label(flavor)}]: CPU vs Update FPS",
+                            f"{OUTPUT_DIR}/individual/Run_{run_num}_{flavor_label(flavor)}_CPU_vs_Update_FPS.svg", fps_label='Update FPS')
             count += 2
 
     print(f"[+] Generated {count} Individual Run Graphs.")
